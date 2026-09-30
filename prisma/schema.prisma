@@ -1,0 +1,378 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum MovementType {
+  IN
+  OUT
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+enum CashMovementType {
+  SALE
+  PURCHASE
+  EXPENSE
+  INCOME
+  DEBT_PAYMENT
+  DEBT_COLLECTION
+  ADJUSTMENT
+}
+
+enum DebtType {
+  CLIENT
+  SUPPLIER
+}
+
+enum DebtStatus {
+  OPEN
+  PARTIAL
+  PAID
+}
+
+model User {
+  id        Int    @id @default(autoincrement())
+  name      String
+  user_name String @unique
+  password  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales          Sale[]
+  stockMovements StockMovement[]
+  cashBoxes      CashBox[]
+  cashMovements  CashMovement[]
+  debts          Debt[]
+  debtPayments   DebtPayment[]
+  locales        Local[]
+  tickets        Ticket[]
+  purchases      Purchase[]
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  products    Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id Int @id @default(autoincrement())
+
+  name        String
+  // barcode → opcional y único.
+  barcode     String? @unique
+  description String?
+
+  unit       String    @default("unidad")
+  // price → precio actual de venta.
+  price      Float
+  // costPrice → costo actual de adquisición.
+  costPrice  Float
+  // stock → existencias actuales.
+  stock      Int       @default(0)
+  // minStock → límite para alertar de stock bajo.
+  minStock   Int       @default(0)
+  // active → permite desactivar un producto sin borrarlo.
+  active     Boolean   @default(true)
+  // categoryId → relación con una categoría.
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+  ticketItems    TicketItem[]
+  purchaseItems  PurchaseItem[]
+
+  @@index([name])
+  @@index([categoryId])
+}
+
+model Sale {
+  id Int @id @default(autoincrement())
+
+  total  Float
+  profit Float @default(0)
+
+  paymentType String?
+
+  createdAt DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  items SaleItem[]
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model SaleItem {
+  id Int @id @default(autoincrement())
+
+  quantity Int
+
+  price     Float?
+  unitPrice Float?
+  costPrice Float?
+
+  profit   Float @default(0)
+  subtotal Float
+
+  productName String?
+
+  saleId Int
+  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([saleId])
+}
+
+model StockMovement {
+  id Int @id @default(autoincrement())
+
+  type     MovementType
+  quantity Int
+
+  note   String?
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([productId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Representa la compra completa
+model Purchase {
+  id           Int            @id @default(autoincrement())
+  total        Float
+  paymentType  String?
+  supplierName String?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  userId       Int
+  user         User           @relation(fields: [userId], references: [id])
+  items        PurchaseItem[]
+  debt         Debt?
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+//Representa lo que contiene la compra
+model PurchaseItem {
+  id Int @id @default(autoincrement())
+
+  quantity    Int
+  unitCost    Float
+  subtotal    Float
+  productName String?
+
+  purchaseId Int
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model Local {
+  id Int @id @default(autoincrement())
+
+  name    String
+  address String?
+  phone   String?
+  email   String?
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  tickets Ticket[]
+
+  @@unique([userId, name])
+  @@index([userId, active])
+}
+
+model Ticket {
+  id Int @id @default(autoincrement())
+
+  number String
+
+  subtotal Float
+  discount Float @default(0)
+  total    Float
+
+  paymentType   String?
+  paymentStatus DebtStatus @default(PAID)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  localId Int?
+  local   Local? @relation(fields: [localId], references: [id], onDelete: SetNull)
+
+  cashBoxId Int?
+  cashBox   CashBox? @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+
+  items TicketItem[]
+  debts Debt[]
+
+  @@unique([userId, number])
+  @@index([userId, createdAt])
+  @@index([localId])
+  @@index([cashBoxId])
+  @@index([paymentStatus])
+}
+
+model TicketItem {
+  id Int @id @default(autoincrement())
+
+  productName String
+  quantity    Int
+  unitCost    Float
+  subtotal    Float
+
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+  @@index([productId])
+}
+
+model CashBox {
+  id Int @id @default(autoincrement())
+
+  name String
+
+  initialCapital Float @default(0)
+  currentBalance Float @default(0)
+
+  currency String @default("CUP")
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  movements    CashMovement[]
+  tickets      Ticket[]
+  debtPayments DebtPayment[]
+
+  @@index([userId, active])
+}
+
+model CashMovement {
+  id Int @id @default(autoincrement())
+
+  type   CashMovementType
+  amount Float
+
+  description String?
+
+  referenceType String?
+  referenceId   Int?
+
+  createdAt DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  cashBoxId Int
+  cashBox   CashBox @relation(fields: [cashBoxId], references: [id], onDelete: Cascade)
+
+  @@index([cashBoxId, createdAt])
+  @@index([userId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model Debt {
+  id         Int        @id @default(autoincrement())
+  personName String
+  type       DebtType
+  total      Float
+  remaining  Float      @default(0)
+  status     DebtStatus @default(OPEN)
+  dueDate    DateTime?
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  ticketId Int?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  purchaseId Int?      @unique
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  payments DebtPayment[]
+
+  @@index([userId, status])
+  @@index([ticketId])
+  @@index([type, status])
+}
+
+model DebtPayment {
+  id        Int      @id @default(autoincrement())
+  amount    Float
+  notes     String?
+  createdAt DateTime @default(now())
+
+  debtId Int
+  debt   Debt @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  cashBoxId Int
+  cashBox   CashBox @relation(fields: [cashBoxId], references: [id])
+
+  @@index([debtId, createdAt])
+  @@index([userId, createdAt])
+  @@index([cashBoxId, createdAt])
+}
