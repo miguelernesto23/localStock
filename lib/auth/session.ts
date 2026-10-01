@@ -8,7 +8,7 @@ if (!secret) {
 
 const secretKey = new TextEncoder().encode(secret);
 
-export async function createSeassion(userId: number) {
+export async function createSession(userId: number) {
   const token = await new SignJWT({
     userId,
   })

@@ -1,5 +1,6 @@
 "use server";
-import { createSeassion } from "@/lib/auth/session";
+
+import { createSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 import { loginSchema } from "@/schema/login.schema";
 import bcrypt from "bcryptjs";
@@ -7,6 +8,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 export async function LoginAction(formData: FormData) {
+  // 1. Validar datos
   const result = loginSchema.safeParse({
     user_name: formData.get("user_name"),
     password: formData.get("password"),
@@ -14,43 +16,69 @@ export async function LoginAction(formData: FormData) {
 
   if (!result.success) {
     return {
-      error: "Datos Invalidos",
+      error: "Revisa los datos introducidos.",
     };
   }
 
   const { user_name, password } = result.data;
 
-  const user = await prisma.user.findUnique({
-    where: {
-      user_name,
-    },
-  });
+  // 2. Buscar usuario y comprobar contraseña
+  let user;
 
-  if (!user) {
+  try {
+    user = await prisma.user.findUnique({
+      where: {
+        user_name,
+      },
+      select: {
+        id: true,
+        password: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        error: "Usuario o contraseña incorrectos",
+      };
+    }
+
+    const passwordValid = await bcrypt.compare(password, user.password);
+
+    if (!passwordValid) {
+      return {
+        error: "Usuario o contraseña incorrectos",
+      };
+    }
+  } catch (error) {
+    console.error("Error verificando credenciales:", error);
+
     return {
-      error: "Usuario o contraseña incorrectos",
+      error: "No se pudo iniciar sesión. Inténtalo nuevamente.",
     };
   }
 
-  const passwordValid = await bcrypt.compare(password, user.password);
+  // 3. Crear sesión
+  let token: string;
 
-  if (!passwordValid) {
+  try {
+    token = await createSession(user.id);
+
+    const cookieStore = await cookies();
+
+    cookieStore.set("Sesion", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+  } catch (error) {
+    console.error("Error creando la sesión:", error);
+
     return {
-      error: "Usuario o contraseña incorrectos",
+      error: "No se pudo iniciar sesión. Inténtalo nuevamente.",
     };
   }
-
-  const token = await createSeassion(user.id);
-
-  const cookieStore = await cookies();
-
-  cookieStore.set("Sesion", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
 
   redirect("/");
 }
