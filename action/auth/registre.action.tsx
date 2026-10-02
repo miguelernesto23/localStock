@@ -2,7 +2,7 @@
 import prisma from "@/lib/prisma";
 import { registerSchema } from "@/schema/register.schema";
 import bcrypt from "bcryptjs";
-import { createSeassion } from "@/lib/auth/session";
+import { createSession } from "@/lib/auth/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 export async function RegistreAction(formData: FormData) {
@@ -40,7 +40,7 @@ export async function RegistreAction(formData: FormData) {
       password: hashedPassword,
     },
   });
-  const token = await createSeassion(user.id);
+  const token = await createSession(user.id);
   const cookieStore = await cookies();
   cookieStore.set("Sesion", token, {
     httpOnly: true,

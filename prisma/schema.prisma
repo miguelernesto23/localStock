@@ -55,6 +55,7 @@ model User {
   locales        Local[]
   tickets        Ticket[]
   purchases      Purchase[]
+  products       Product[]
 }
 
 model Category {
@@ -98,6 +99,9 @@ model Product {
   stockMovements StockMovement[]
   ticketItems    TicketItem[]
   purchaseItems  PurchaseItem[]
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
 
   @@index([name])
   @@index([categoryId])

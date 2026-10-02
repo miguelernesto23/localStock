@@ -56,6 +56,7 @@ export function EditProductForm({ product, onUpdated }: EditProductFormProps) {
     register,
     handleSubmit,
     setValue,
+    reset,
     control,
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof productSchema>, unknown, ProductFormData>({
@@ -68,10 +69,27 @@ export function EditProductForm({ product, onUpdated }: EditProductFormProps) {
       price: 0,
       costPrice: 0,
       categoryId: undefined,
+      stock: 0,
       minStock: 0,
       active: true,
     },
   });
+
+  useEffect(() => {
+    reset({
+      name: product.name,
+      barcode: product.barcode ?? "",
+      description: product.description ?? "",
+      unit: product.unit,
+      price: product.price,
+      costPrice: product.costPrice,
+      categoryId: product.categoryId ?? undefined,
+      stock: product.stock,
+      minStock: product.minStock,
+      active: product.active,
+    });
+  }, [product, reset]);
+  console.log(product);
 
   const selectedCategoryId = useWatch({
     control,
