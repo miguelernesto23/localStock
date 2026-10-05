@@ -56,6 +56,19 @@ model User {
   tickets        Ticket[]
   purchases      Purchase[]
   products       Product[]
+  sessions       Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Category {

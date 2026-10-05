@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import prisma from "../prisma";
 
 const secret = process.env.AUTH_SECRET;
 
@@ -17,17 +18,41 @@ export async function createSession(userId: number) {
     .setExpirationTime("7d")
     .sign(secretKey);
 
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  await prisma.session.create({
+    data: {
+      token,
+      userId,
+      expiresAt,
+    },
+  });
+
   return token;
 }
 
 export async function verifySession(token: string) {
   try {
     const { payload } = await jwtVerify(token, secretKey);
+    const userId = (payload as { userId: number }).userId;
 
-    return payload as {
-      userId: number;
-    };
+    const session = await prisma.session.findUnique({
+      where: { token },
+    });
+
+    if (!session || new Date() > session.expiresAt) {
+      return null;
+    }
+
+    return { userId };
   } catch {
     return null;
   }
+}
+
+export async function invalidateSession(token: string) {
+  await prisma.session.deleteMany({
+    where: { token },
+  });
 }
