@@ -9,6 +9,7 @@ import {
   Calculator,
   ShoppingBag,
   HandCoins,
+  Cog,
 } from "lucide-react";
 
 import {
@@ -109,6 +110,14 @@ export default function DashboardLayout({
                       <SidebarMenuButton asChild>
                         <Link href="/shopping-list">
                           <ShoppingBag className="mr-2 h-4 w-4" /> Shopping List
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild>
+                        <Link href="/config">
+                          <Cog className="mr-2 h-4 w-4"  />
+                          Configurción
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

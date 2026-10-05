@@ -70,7 +70,7 @@ export default async function DashboardPage() {
   const { metrics, charts } = data;
 
   return (
-    <main className="container mx-auto max-w-7xl space-y-8 p-6">
+    <main className="container mx-auto max-w-7xl space-y-8 ">
       {/* HEADER */}
       <section>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

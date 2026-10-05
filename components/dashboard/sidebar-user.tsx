@@ -1,4 +1,4 @@
-import { LogOut, MoreVertical, User } from "lucide-react";
+import { Cog, LogOut, MoreVertical, User } from "lucide-react";
 
 import {
   SidebarMenu,
@@ -15,6 +15,8 @@ import {
 
 import { LogoutAction } from "@/action/auth/logout.action";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { Button } from "../ui/button";
+import Link from "next/link";
 
 export async function SidebarUser() {
   const user = await getCurrentUser();
