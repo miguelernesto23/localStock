@@ -56,6 +56,7 @@ export async function createCashBoxRepo(data: CreateCashBoxInput) {
     return cashBox;
   });
 }
+
 export async function getCashMovementsRepo(cashBoxId: number, userId: number) {
   return prisma.cashMovement.findMany({
     where: {
@@ -67,13 +68,15 @@ export async function getCashMovementsRepo(cashBoxId: number, userId: number) {
     },
   });
 }
-type AddCapitalInput = {
+
+type AdjustCapitalInput = {
   cashBoxId: number;
   amount: number;
   userId: number;
+  mode: "IN" | "OUT";
 };
 
-export async function addCapitalRepo(data: AddCapitalInput) {
+export async function adjustCapitalRepo(data: AdjustCapitalInput) {
   return prisma.$transaction(async (tx) => {
     const cashBox = await tx.cashBox.findFirst({
       where: {
@@ -91,27 +94,58 @@ export async function addCapitalRepo(data: AddCapitalInput) {
       throw new Error("INVALID_AMOUNT");
     }
 
+    if (data.mode === "OUT" && data.amount > cashBox.currentBalance) {
+      throw new Error("INSUFFICIENT_FUNDS");
+    }
+
     const updatedCashBox = await tx.cashBox.update({
       where: {
         id: cashBox.id,
       },
       data: {
         currentBalance: {
-          increment: data.amount,
+          increment: data.mode === "OUT" ? -data.amount : data.amount,
         },
       },
     });
 
     await tx.cashMovement.create({
       data: {
-        type: "ADJUSTMENT",
+        type: data.mode === "OUT" ? "EXPENSE" : "INCOME",
         amount: data.amount,
-        description: "Ingreso de capital",
+        description:
+          data.mode === "OUT"
+            ? "Retiro de capital"
+            : "Ingreso de capital",
         userId: data.userId,
         cashBoxId: cashBox.id,
       },
     });
 
     return updatedCashBox;
+  });
+}
+
+type AddCapitalInput = {
+  cashBoxId: number;
+  amount: number;
+  userId: number;
+};
+
+export async function addCapitalRepo(data: AddCapitalInput) {
+  return adjustCapitalRepo({
+    cashBoxId: data.cashBoxId,
+    amount: data.amount,
+    userId: data.userId,
+    mode: "IN",
+  });
+}
+
+export async function removeCapitalRepo(data: AddCapitalInput) {
+  return adjustCapitalRepo({
+    cashBoxId: data.cashBoxId,
+    amount: data.amount,
+    userId: data.userId,
+    mode: "OUT",
   });
 }

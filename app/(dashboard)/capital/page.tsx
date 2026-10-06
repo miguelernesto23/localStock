@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   Loader2,
+  Minus,
   Plus,
   WalletCards,
 } from "lucide-react";
@@ -34,6 +35,7 @@ import {
   createCashBox,
   getCashMovements,
   addCapital,
+  removeCapital,
 } from "@/action/cashbox.action";
 
 import { Button } from "@/components/ui/button";
@@ -60,18 +62,19 @@ type CashMovement = {
 export default function CapitalPage() {
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBoxId, setSelectedBoxId] = useState<number | null>(null);
 
   // Crear caja
   const [name, setName] = useState("");
   const [initialCapital, setInitialCapital] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Ingresar capital
+  // Ingresar/retirar capital
   const [capitalDialogOpen, setCapitalDialogOpen] = useState(false);
-  const [selectedCashBox, setSelectedCashBox] =
-    useState<CashBox | null>(null);
+  const [selectedCashBox, setSelectedCashBox] = useState<CashBox | null>(null);
   const [capitalAmount, setCapitalAmount] = useState("");
-  const [addingCapital, setAddingCapital] = useState(false);
+  const [capitalMode, setCapitalMode] = useState<"IN" | "OUT">("IN");
+  const [processingCapital, setProcessingCapital] = useState(false);
 
   // Mensajes
   const [error, setError] = useState("");
@@ -79,12 +82,6 @@ export default function CapitalPage() {
 
   // Movimientos
   const [movements, setMovements] = useState<CashMovement[]>([]);
-
-  /*
-   * ============================================================
-   * CARGAR DATOS
-   * ============================================================
-   */
 
   useEffect(() => {
     let cancelled = false;
@@ -106,9 +103,10 @@ export default function CapitalPage() {
         setCashBoxes(result.cashBoxes);
 
         if (result.cashBoxes.length > 0) {
-          const movementsResult = await getCashMovements(
-            result.cashBoxes[0].id
-          );
+          const nextSelectedBoxId: number = result.cashBoxes[0].id;
+          setSelectedBoxId(nextSelectedBoxId);
+
+          const movementsResult = await getCashMovements(nextSelectedBoxId);
 
           if (cancelled) return;
 
@@ -119,6 +117,7 @@ export default function CapitalPage() {
 
           setMovements(movementsResult.movements);
         } else {
+          setSelectedBoxId(null);
           setMovements([]);
         }
       } catch (error) {
@@ -140,12 +139,6 @@ export default function CapitalPage() {
     };
   }, []);
 
-  /*
-   * ============================================================
-   * RECARGAR CAJAS
-   * ============================================================
-   */
-
   async function loadCashBoxes() {
     try {
       setLoading(true);
@@ -161,17 +154,18 @@ export default function CapitalPage() {
       setCashBoxes(result.cashBoxes);
 
       if (result.cashBoxes.length > 0) {
-        const movementsResult = await getCashMovements(
-          result.cashBoxes[0].id
-        );
+        const selectedMatch =
+          selectedBoxId !== null
+            ? result.cashBoxes.find((cashBox) => cashBox.id === selectedBoxId)
+            : undefined;
 
-        if (!movementsResult.success) {
-          setError(movementsResult.error);
-          return;
-        }
+        const nextSelectedBoxId: number =
+          selectedMatch?.id ?? result.cashBoxes[0].id;
 
-        setMovements(movementsResult.movements);
+        setSelectedBoxId(nextSelectedBoxId);
+        await loadMovementsForCashBox(nextSelectedBoxId);
       } else {
+        setSelectedBoxId(null);
         setMovements([]);
       }
     } catch (error) {
@@ -182,15 +176,34 @@ export default function CapitalPage() {
     }
   }
 
-  /*
-   * ============================================================
-   * CREAR CAJA
-   * ============================================================
-   */
+  async function loadMovementsForCashBox(cashBoxId: number) {
+    const movementsResult = await getCashMovements(cashBoxId);
 
-  async function handleCreateCashBox(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
+    if (!movementsResult.success) {
+      setError(movementsResult.error);
+      return;
+    }
+
+    setMovements(movementsResult.movements);
+  }
+
+  useEffect(() => {
+    if (selectedBoxId === null) return;
+
+    const boxId = selectedBoxId;
+
+    async function refreshMovements() {
+      try {
+        await loadMovementsForCashBox(boxId);
+      } catch (error) {
+        console.error("Error actualizando movimientos:", error);
+      }
+    }
+
+    refreshMovements();
+  }, [selectedBoxId]);
+
+  async function handleCreateCashBox(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setError("");
@@ -200,21 +213,17 @@ export default function CapitalPage() {
 
     if (!name.trim()) {
       setError("El nombre de la caja es obligatorio.");
-
       toast.error("El nombre de la caja es obligatorio", {
         position: "top-center",
       });
-
       return;
     }
 
     if (!Number.isFinite(capital) || capital < 0) {
       setError("Introduce un capital inicial válido.");
-
       toast.error("Introduce un capital inicial válido", {
         position: "top-center",
       });
-
       return;
     }
 
@@ -228,16 +237,13 @@ export default function CapitalPage() {
 
       if (!result.success) {
         setError(result.error);
-
         toast.error(result.error, {
           position: "top-center",
         });
-
         return;
       }
 
       setSuccess("Caja creada correctamente.");
-
       toast.success("Caja creada correctamente", {
         position: "top-center",
       });
@@ -248,9 +254,7 @@ export default function CapitalPage() {
       await loadCashBoxes();
     } catch (error) {
       console.error("Error creando caja:", error);
-
       setError("No se pudo crear la caja.");
-
       toast.error("No se pudo crear la caja", {
         position: "top-center",
       });
@@ -259,15 +263,7 @@ export default function CapitalPage() {
     }
   }
 
-  /*
-   * ============================================================
-   * INGRESAR CAPITAL
-   * ============================================================
-   */
-
-  async function handleAddCapital(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
+  async function handleAdjustCapital(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setError("");
@@ -275,11 +271,9 @@ export default function CapitalPage() {
 
     if (!selectedCashBox) {
       setError("No hay una caja seleccionada.");
-
       toast.error("No hay una caja seleccionada", {
         position: "top-center",
       });
-
       return;
     }
 
@@ -287,64 +281,93 @@ export default function CapitalPage() {
 
     if (!Number.isFinite(amount) || amount <= 0) {
       setError("Introduce un monto válido mayor que 0.");
-
       toast.error("Introduce un monto válido mayor que 0", {
         position: "top-center",
       });
-
       return;
     }
 
-    setAddingCapital(true);
+    if (capitalMode === "OUT" && amount > selectedCashBox.currentBalance) {
+      setError("No hay suficiente saldo para retirar ese monto.");
+      toast.error("No hay suficiente saldo para retirar ese monto", {
+        position: "top-center",
+      });
+      return;
+    }
+
+    setProcessingCapital(true);
 
     try {
-      const result = await addCapital({
-        cashBoxId: selectedCashBox.id,
-        amount,
-      });
+      const result =
+        capitalMode === "IN"
+          ? await addCapital({
+              cashBoxId: selectedCashBox.id,
+              amount,
+            })
+          : await removeCapital({
+              cashBoxId: selectedCashBox.id,
+              amount,
+            });
 
       if (!result.success) {
         setError(result.error);
-
         toast.error(result.error, {
           position: "top-center",
         });
-
         return;
       }
 
       setCapitalAmount("");
       setCapitalDialogOpen(false);
       setSelectedCashBox(null);
+      setCapitalMode("IN");
 
-      setSuccess("Capital ingresado correctamente.");
+      setSuccess(
+        capitalMode === "IN"
+          ? "Capital ingresado correctamente."
+          : "Capital retirado correctamente.",
+      );
 
-      toast.success("Capital ingresado correctamente", {
-        position: "top-center",
-      });
+      toast.success(
+        capitalMode === "IN"
+          ? "Capital ingresado correctamente"
+          : "Capital retirado correctamente",
+        {
+          position: "top-center",
+        },
+      );
 
       await loadCashBoxes();
     } catch (error) {
-      console.error("Error ingresando capital:", error);
+      console.error(
+        capitalMode === "IN"
+          ? "Error ingresando capital:"
+          : "Error retirando capital:",
+        error,
+      );
 
-      setError("No se pudo ingresar el capital.");
+      setError(
+        capitalMode === "IN"
+          ? "No se pudo ingresar el capital."
+          : "No se pudo retirar el capital.",
+      );
 
-      toast.error("No se pudo ingresar el capital", {
-        position: "top-center",
-      });
+      toast.error(
+        capitalMode === "IN"
+          ? "No se pudo ingresar el capital"
+          : "No se pudo retirar el capital",
+        {
+          position: "top-center",
+        },
+      );
     } finally {
-      setAddingCapital(false);
+      setProcessingCapital(false);
     }
   }
 
-  /*
-   * ============================================================
-   * DIALOG
-   * ============================================================
-   */
-
-  function handleOpenCapitalDialog(cashBox: CashBox) {
+  function handleOpenCapitalDialog(cashBox: CashBox, mode: "IN" | "OUT") {
     setSelectedCashBox(cashBox);
+    setCapitalMode(mode);
     setCapitalAmount("");
     setError("");
     setSuccess("");
@@ -352,23 +375,15 @@ export default function CapitalPage() {
   }
 
   function handleCloseCapitalDialog() {
-    if (addingCapital) return;
+    if (processingCapital) return;
 
     setCapitalDialogOpen(false);
     setSelectedCashBox(null);
     setCapitalAmount("");
+    setCapitalMode("IN");
   }
 
-  /*
-   * ============================================================
-   * UTILIDADES
-   * ============================================================
-   */
-
-  function formatCurrency(
-    value: number,
-    currency = "CUP"
-  ) {
+  function formatCurrency(value: number, currency = "CUP") {
     return `${value.toLocaleString("es-CU", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -399,6 +414,15 @@ export default function CapitalPage() {
       case "PURCHASE":
         return "Compra";
 
+      case "INCOME":
+        return "Ingreso";
+
+      case "EXPENSE":
+        return "Egreso";
+
+      case "ADJUSTMENT":
+        return "Ajuste";
+
       default:
         return type;
     }
@@ -408,14 +432,19 @@ export default function CapitalPage() {
     switch (type) {
       case "IN":
       case "CAPITAL":
+      case "INCOME":
         return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
 
       case "OUT":
       case "PURCHASE":
+      case "EXPENSE":
         return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
 
       case "SALE":
         return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+
+      case "ADJUSTMENT":
+        return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
 
       default:
         return "bg-muted text-muted-foreground";
@@ -423,21 +452,11 @@ export default function CapitalPage() {
   }
 
   function isIncomeMovement(type: string) {
-    return ["IN", "CAPITAL", "SALE"].includes(type);
+    return ["IN", "CAPITAL", "SALE", "INCOME"].includes(type);
   }
-
-  /*
-   * ============================================================
-   * RENDER
-   * ============================================================
-   */
 
   return (
     <div className="space-y-6">
-      {/* ======================================================
-          ENCABEZADO
-      ======================================================= */}
-
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -460,9 +479,7 @@ export default function CapitalPage() {
               <WalletCards className="h-6 w-6 text-primary" />
             </motion.div>
 
-            <h1 className="text-2xl font-bold tracking-tight">
-              Capital
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight">Capital</h1>
           </div>
 
           <p className="mt-1 text-muted-foreground">
@@ -470,10 +487,6 @@ export default function CapitalPage() {
           </p>
         </div>
       </motion.div>
-
-      {/* ======================================================
-          ERROR / SUCCESS GENERAL
-      ======================================================= */}
 
       <AnimatePresence mode="wait">
         {error && !capitalDialogOpen && (
@@ -503,10 +516,6 @@ export default function CapitalPage() {
         )}
       </AnimatePresence>
 
-      {/* ======================================================
-          CREAR CAJA
-      ======================================================= */}
-
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -518,10 +527,7 @@ export default function CapitalPage() {
         className="rounded-xl border bg-card p-6 shadow-sm"
       >
         <div className="mb-6">
-          <h2 className="text-lg font-semibold">
-            Crear caja
-          </h2>
-
+          <h2 className="text-lg font-semibold">Crear caja</h2>
           <p className="text-sm text-muted-foreground">
             Define el capital inicial disponible.
           </p>
@@ -532,10 +538,7 @@ export default function CapitalPage() {
           className="grid gap-4 md:grid-cols-3"
         >
           <div className="space-y-2">
-            <label
-              htmlFor="cashbox-name"
-              className="text-sm font-medium"
-            >
+            <label htmlFor="cashbox-name" className="text-sm font-medium">
               Nombre
             </label>
 
@@ -543,18 +546,13 @@ export default function CapitalPage() {
               id="cashbox-name"
               placeholder="Ej. Caja principal"
               value={name}
-              onChange={(event) =>
-                setName(event.target.value)
-              }
+              onChange={(event) => setName(event.target.value)}
               disabled={creating}
             />
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="initial-capital"
-              className="text-sm font-medium"
-            >
+            <label htmlFor="initial-capital" className="text-sm font-medium">
               Capital inicial
             </label>
 
@@ -565,9 +563,7 @@ export default function CapitalPage() {
               step="0.01"
               placeholder="Ej. 10000"
               value={initialCapital}
-              onChange={(event) =>
-                setInitialCapital(event.target.value)
-              }
+              onChange={(event) => setInitialCapital(event.target.value)}
               disabled={creating}
             />
           </div>
@@ -578,29 +574,19 @@ export default function CapitalPage() {
               whileTap={{ scale: 0.98 }}
               className="w-full"
             >
-              <Button
-                type="submit"
-                disabled={creating}
-                className="w-full"
-              >
+              <Button type="submit" disabled={creating} className="w-full">
                 {creating ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Plus className="mr-2 h-4 w-4" />
                 )}
 
-                {creating
-                  ? "Creando..."
-                  : "Crear caja"}
+                {creating ? "Creando..." : "Crear caja"}
               </Button>
             </motion.div>
           </div>
         </form>
       </motion.div>
-
-      {/* ======================================================
-          MIS CAJAS
-      ======================================================= */}
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -613,10 +599,7 @@ export default function CapitalPage() {
         className="space-y-4"
       >
         <div>
-          <h2 className="text-lg font-semibold">
-            Mis cajas
-          </h2>
-
+          <h2 className="text-lg font-semibold">Mis cajas</h2>
           <p className="text-sm text-muted-foreground">
             Cajas disponibles y su saldo actual.
           </p>
@@ -639,32 +622,18 @@ export default function CapitalPage() {
           ) : cashBoxes.length === 0 ? (
             <motion.div
               key="empty"
-              initial={{
-                opacity: 0,
-                scale: 0.97,
-                y: 10,
-              }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-                y: 0,
-              }}
-              exit={{
-                opacity: 0,
-                scale: 0.97,
-              }}
+              initial={{ opacity: 0, scale: 0.97, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.3 }}
               className="rounded-xl border border-dashed p-8 text-center"
             >
               <WalletCards className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
 
-              <p className="font-medium">
-                No tienes cajas creadas
-              </p>
+              <p className="font-medium">No tienes cajas creadas</p>
 
               <p className="mt-1 text-sm text-muted-foreground">
-                Crea tu primera caja para comenzar a
-                administrar el capital.
+                Crea tu primera caja para comenzar a administrar el capital.
               </p>
             </motion.div>
           ) : (
@@ -677,16 +646,8 @@ export default function CapitalPage() {
               {cashBoxes.map((cashBox, index) => (
                 <motion.div
                   key={cashBox.id}
-                  initial={{
-                    opacity: 0,
-                    y: 20,
-                    scale: 0.97,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    scale: 1,
-                  }}
+                  initial={{ opacity: 0, y: 20, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{
                     duration: 0.35,
                     delay: index * 0.07,
@@ -706,9 +667,7 @@ export default function CapitalPage() {
                         <WalletCards className="h-4 w-4 text-primary" />
                       </div>
 
-                      <h3 className="font-semibold">
-                        {cashBox.name}
-                      </h3>
+                      <h3 className="font-semibold">{cashBox.name}</h3>
                     </div>
 
                     <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
@@ -729,14 +688,11 @@ export default function CapitalPage() {
                       }}
                       className="mt-1 text-3xl font-bold tracking-tight"
                     >
-                      {formatCurrency(
-                        cashBox.currentBalance,
-                        cashBox.currency
-                      )}
+                      {formatCurrency(cashBox.currentBalance, cashBox.currency)}
                     </motion.p>
                   </div>
 
-                  <div className="mt-5">
+                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
                     <motion.div
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
@@ -744,12 +700,24 @@ export default function CapitalPage() {
                       <Button
                         variant="outline"
                         className="w-full"
-                        onClick={() =>
-                          handleOpenCapitalDialog(cashBox)
-                        }
+                        onClick={() => handleOpenCapitalDialog(cashBox, "IN")}
                       >
                         <Plus className="mr-2 h-4 w-4" />
-                        Ingresar capital
+                        Ingresar
+                      </Button>
+                    </motion.div>
+
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => handleOpenCapitalDialog(cashBox, "OUT")}
+                      >
+                        <Minus className="mr-2 h-4 w-4" />
+                        Retirar
                       </Button>
                     </motion.div>
                   </div>
@@ -760,10 +728,7 @@ export default function CapitalPage() {
                     </p>
 
                     <p className="font-medium">
-                      {formatCurrency(
-                        cashBox.initialCapital,
-                        cashBox.currency
-                      )}
+                      {formatCurrency(cashBox.initialCapital, cashBox.currency)}
                     </p>
                   </div>
                 </motion.div>
@@ -772,10 +737,6 @@ export default function CapitalPage() {
           )}
         </AnimatePresence>
       </motion.div>
-
-      {/* ======================================================
-          DIALOG INGRESAR CAPITAL
-      ======================================================= */}
 
       <Dialog
         open={capitalDialogOpen}
@@ -790,25 +751,19 @@ export default function CapitalPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Ingresar capital
+              {capitalMode === "IN" ? "Ingresar capital" : "Retirar capital"}
             </DialogTitle>
 
             <DialogDescription>
               {selectedCashBox
-                ? `Agrega dinero a ${selectedCashBox.name}.`
-                : "Agrega dinero a la caja seleccionada."}
+                ? `${capitalMode === "IN" ? "Agrega" : "Retira"} dinero de ${selectedCashBox.name}.`
+                : "Seleccione una caja."}
             </DialogDescription>
           </DialogHeader>
 
-          <form
-            onSubmit={handleAddCapital}
-            className="space-y-6"
-          >
+          <form onSubmit={handleAdjustCapital} className="space-y-6">
             <div className="space-y-2">
-              <label
-                htmlFor="capital-amount"
-                className="text-sm font-medium"
-              >
+              <label htmlFor="capital-amount" className="text-sm font-medium">
                 Monto
               </label>
 
@@ -819,11 +774,9 @@ export default function CapitalPage() {
                 step="0.01"
                 placeholder="Ej. 5000"
                 value={capitalAmount}
-                onChange={(event) =>
-                  setCapitalAmount(event.target.value)
-                }
+                onChange={(event) => setCapitalAmount(event.target.value)}
                 autoFocus
-                disabled={addingCapital}
+                disabled={processingCapital}
               />
 
               {selectedCashBox && (
@@ -831,7 +784,7 @@ export default function CapitalPage() {
                   Saldo actual:{" "}
                   {formatCurrency(
                     selectedCashBox.currentBalance,
-                    selectedCashBox.currency
+                    selectedCashBox.currency,
                   )}
                 </p>
               )}
@@ -840,18 +793,9 @@ export default function CapitalPage() {
             <AnimatePresence>
               {error && (
                 <motion.p
-                  initial={{
-                    opacity: 0,
-                    y: -5,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                  }}
-                  exit={{
-                    opacity: 0,
-                    y: -5,
-                  }}
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
                   className="text-sm text-destructive"
                 >
                   {error}
@@ -867,7 +811,7 @@ export default function CapitalPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={addingCapital}
+                  disabled={processingCapital}
                   onClick={handleCloseCapitalDialog}
                 >
                   Cancelar
@@ -878,19 +822,22 @@ export default function CapitalPage() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <Button
-                  type="submit"
-                  disabled={addingCapital}
-                >
-                  {addingCapital ? (
+                <Button type="submit" disabled={processingCapital}>
+                  {processingCapital ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
+                  ) : capitalMode === "IN" ? (
                     <Plus className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Minus className="mr-2 h-4 w-4" />
                   )}
 
-                  {addingCapital
-                    ? "Ingresando..."
-                    : "Confirmar ingreso"}
+                  {processingCapital
+                    ? capitalMode === "IN"
+                      ? "Ingresando..."
+                      : "Retirando..."
+                    : capitalMode === "IN"
+                      ? "Confirmar ingreso"
+                      : "Confirmar retiro"}
                 </Button>
               </motion.div>
             </DialogFooter>
@@ -898,20 +845,10 @@ export default function CapitalPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ======================================================
-          HISTORIAL DE MOVIMIENTOS
-      ======================================================= */}
-
       {cashBoxes.length > 0 && (
         <motion.div
-          initial={{
-            opacity: 0,
-            y: 20,
-          }}
-          animate={{
-            opacity: 1,
-            y: 0,
-          }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{
             duration: 0.45,
             delay: 0.2,
@@ -920,10 +857,7 @@ export default function CapitalPage() {
           className="space-y-4"
         >
           <div>
-            <h2 className="text-lg font-semibold">
-              Historial de movimientos
-            </h2>
-
+            <h2 className="text-lg font-semibold">Historial de movimientos</h2>
             <p className="text-sm text-muted-foreground">
               Movimientos registrados en la caja.
             </p>
@@ -934,28 +868,17 @@ export default function CapitalPage() {
               {movements.length === 0 ? (
                 <motion.div
                   key="empty-movements"
-                  initial={{
-                    opacity: 0,
-                    scale: 0.97,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    scale: 1,
-                  }}
-                  transition={{
-                    duration: 0.3,
-                  }}
+                  initial={{ opacity: 0, scale: 0.97 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3 }}
                   className="p-8 text-center"
                 >
                   <CalendarDays className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
 
-                  <p className="font-medium">
-                    No hay movimientos
-                  </p>
+                  <p className="font-medium">No hay movimientos</p>
 
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Los movimientos de esta caja
-                    aparecerán aquí.
+                    Los movimientos de esta caja aparecerán aquí.
                   </p>
                 </motion.div>
               ) : (
@@ -970,105 +893,72 @@ export default function CapitalPage() {
                       <TableRow>
                         <TableHead>Fecha</TableHead>
                         <TableHead>Tipo</TableHead>
-                        <TableHead>
-                          Descripción
-                        </TableHead>
-                        <TableHead className="text-right">
-                          Monto
-                        </TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
                       </TableRow>
                     </TableHeader>
 
                     <TableBody>
                       <AnimatePresence mode="popLayout">
-                        {movements.map(
-                          (movement, index) => {
-                            const income =
-                              isIncomeMovement(
-                                movement.type
-                              );
+                        {movements.map((movement, index) => {
+                          const income = isIncomeMovement(movement.type);
 
-                            return (
-                              <motion.tr
-                                key={movement.id}
-                                layout
-                                initial={{
-                                  opacity: 0,
-                                  x: -15,
-                                }}
-                                animate={{
-                                  opacity: 1,
-                                  x: 0,
-                                }}
-                                exit={{
-                                  opacity: 0,
-                                  x: 15,
-                                }}
-                                transition={{
-                                  duration: 0.3,
-                                  delay:
-                                    index * 0.04,
-                                  ease: "easeOut",
-                                }}
-                                whileHover={{
-                                  backgroundColor:
-                                    "hsl(var(--muted) / 0.5)",
-                                }}
-                                className="border-b last:border-0"
-                              >
-                                <TableCell className="whitespace-nowrap text-muted-foreground">
-                                  {formatDate(
-                                    movement.createdAt
+                          return (
+                            <motion.tr
+                              key={movement.id}
+                              layout
+                              initial={{ opacity: 0, x: -15 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 15 }}
+                              transition={{
+                                duration: 0.3,
+                                delay: index * 0.04,
+                                ease: "easeOut",
+                              }}
+                              whileHover={{
+                                backgroundColor: "hsl(var(--muted) / 0.5)",
+                              }}
+                              className="border-b last:border-0"
+                            >
+                              <TableCell className="whitespace-nowrap text-muted-foreground">
+                                {formatDate(movement.createdAt)}
+                              </TableCell>
+
+                              <TableCell>
+                                <span
+                                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getMovementClassName(movement.type)}`}
+                                >
+                                  {income ? (
+                                    <ArrowUpRight className="h-3 w-3" />
+                                  ) : (
+                                    <ArrowDownLeft className="h-3 w-3" />
                                   )}
-                                </TableCell>
 
-                                <TableCell>
-                                  <span
-                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getMovementClassName(
-                                      movement.type
-                                    )}`}
-                                  >
-                                    {income ? (
-                                      <ArrowUpRight className="h-3 w-3" />
-                                    ) : (
-                                      <ArrowDownLeft className="h-3 w-3" />
-                                    )}
+                                  {getMovementLabel(movement.type)}
+                                </span>
+                              </TableCell>
 
-                                    {getMovementLabel(
-                                      movement.type
-                                    )}
-                                  </span>
-                                </TableCell>
+                              <TableCell>
+                                <span className="text-sm">
+                                  {movement.description || "Sin descripción"}
+                                </span>
+                              </TableCell>
 
-                                <TableCell>
-                                  <span className="text-sm">
-                                    {movement.description ||
-                                      "Sin descripción"}
-                                  </span>
-                                </TableCell>
-
-                                <TableCell className="text-right">
-                                  <span
-                                    className={`font-semibold ${
-                                      income
-                                        ? "text-green-600 dark:text-green-400"
-                                        : "text-red-600 dark:text-red-400"
-                                    }`}
-                                  >
-                                    {income
-                                      ? "+"
-                                      : "-"}
-                                    {formatCurrency(
-                                      Math.abs(
-                                        movement.amount
-                                      )
-                                    )}
-                                  </span>
-                                </TableCell>
-                              </motion.tr>
-                            );
-                          }
-                        )}
+                              <TableCell className="text-right">
+                                <span
+                                  className={`font-semibold ${
+                                    income
+                                      ? "text-green-600 dark:text-green-400"
+                                      : "text-red-600 dark:text-red-400"
+                                  }`}
+                                >
+                                  {income ? "+" : "-"}
+                                  {formatCurrency(Math.abs(movement.amount))}
+                                </span>
+                              </TableCell>
+                            </motion.tr>
+                          );
+                        })}
                       </AnimatePresence>
                     </TableBody>
                   </Table>

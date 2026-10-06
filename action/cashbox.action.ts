@@ -8,6 +8,7 @@ import {
   createCashBoxRepo,
   getCashMovementsRepo,
   addCapitalRepo,
+  removeCapitalRepo,
 } from "@/repository/cashbox.repository";
 
 type CreateCashBoxInput = {
@@ -138,12 +139,14 @@ export async function createCashBox(data: CreateCashBoxInput) {
     };
   }
 }
-type AddCapitalInput = {
+
+type AdjustCapitalInput = {
   cashBoxId: number;
   amount: number;
+  mode: "IN" | "OUT";
 };
 
-export async function addCapital(data: AddCapitalInput) {
+export async function addCapital(data: Omit<AdjustCapitalInput, "mode">) {
   try {
     const user = await getCurrentUser();
 
@@ -201,6 +204,73 @@ export async function addCapital(data: AddCapitalInput) {
     };
   }
 }
+
+export async function removeCapital(data: Omit<AdjustCapitalInput, "mode">) {
+  try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return {
+        success: false as const,
+        error: "No estás autenticado.",
+      };
+    }
+
+    if (!Number.isInteger(data.cashBoxId) || data.cashBoxId <= 0) {
+      return {
+        success: false as const,
+        error: "La caja seleccionada no es válida.",
+      };
+    }
+
+    if (!Number.isFinite(data.amount) || data.amount <= 0) {
+      return {
+        success: false as const,
+        error: "El monto debe ser mayor que 0.",
+      };
+    }
+
+    const cashBox = await removeCapitalRepo({
+      cashBoxId: data.cashBoxId,
+      amount: data.amount,
+      userId: user.id,
+    });
+
+    return {
+      success: true as const,
+      cashBox,
+    };
+  } catch (error) {
+    console.error("Error retirando capital:", error);
+
+    if (error instanceof Error && error.message === "CASHBOX_NOT_FOUND") {
+      return {
+        success: false as const,
+        error: "La caja no existe o no está activa.",
+      };
+    }
+
+    if (error instanceof Error && error.message === "INVALID_AMOUNT") {
+      return {
+        success: false as const,
+        error: "El monto de capital no es válido.",
+      };
+    }
+
+    if (error instanceof Error && error.message === "INSUFFICIENT_FUNDS") {
+      return {
+        success: false as const,
+        error: "No hay suficiente saldo en la caja para retirar ese monto.",
+      };
+    }
+
+    return {
+      success: false as const,
+      error: "No se pudo retirar el capital.",
+    };
+  }
+}
+
 export async function getActiveCashBoxBalance() {
   try {
     const user = await getCurrentUser();
