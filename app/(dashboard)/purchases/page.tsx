@@ -42,11 +42,6 @@ type Purchase = {
   notes: string | null;
   createdAt: Date;
   items: PurchaseItem[];
-  user: {
-    id: number;
-    name: string;
-    user_name: string;
-  };
 };
 
 export default function PurchasesPage() {
@@ -477,10 +472,6 @@ export default function PurchasesPage() {
                       <TableCell>
                         <div>
                           <p className="font-medium">#{purchase.id}</p>
-
-                          <p className="text-xs text-muted-foreground">
-                            {purchase.user.name}
-                          </p>
                         </div>
                       </TableCell>
 

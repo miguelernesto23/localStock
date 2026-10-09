@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma } from "@/generated/prisma/client";
-
+import { verifySession } from "@/lib/auth/session";
 import {
   getPurchasesRepo,
   getPurchaseByIdRepo,
@@ -9,6 +9,7 @@ import {
 } from "@/repository/purchase.repository";
 
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { cookies } from "next/headers";
 
 type PurchaseItemInput = {
   productId: number;
@@ -26,7 +27,26 @@ type CreatePurchaseInput = {
 
 export async function getPurchases() {
   try {
-    const purchases = await getPurchasesRepo();
+    const cookieStore = await cookies();
+    const token = cookieStore.get("Sesion")?.value;
+
+    if (!token) {
+      return {
+        success: false as const,
+        error: "No autorizado.",
+      };
+    }
+
+    const session = await verifySession(token);
+
+    if (!session) {
+      return {
+        success: false as const,
+        error: "Sesión inválida o expirada.",
+      };
+    }
+
+    const purchases = await getPurchasesRepo(session.userId);
 
     return {
       success: true as const,

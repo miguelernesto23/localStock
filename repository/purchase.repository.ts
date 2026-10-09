@@ -218,18 +218,27 @@ export async function createPurchaseRepo(data: CreatePurchaseInput) {
   });
 }
 
-export async function getPurchasesRepo() {
+export async function getPurchasesRepo(userId: number) {
   return prisma.purchase.findMany({
+    where: {
+      userId,
+    },
     orderBy: {
       createdAt: "desc",
     },
     include: {
       items: {
         include: {
-          product: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+              barcode: true,
+              unit: true,
+            },
+          },
         },
       },
-      user: true,
     },
   });
 }

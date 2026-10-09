@@ -1,6 +1,7 @@
 "use server";
 
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 function getDateRange(days: number) {
   const now = new Date();
@@ -40,15 +41,15 @@ function formatDay(date: Date) {
   });
 }
 
-function formatDate(date: Date) {
-  return date.toLocaleDateString("es-CU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
 export async function getDashboardData() {
+  // 1. Verificar la sesión antes de consultar datos.
+  const user = await getCurrentUser();
+
+  if (!user?.id) {
+    throw new Error("No autorizado");
+  }
+
+  const userId = user.id;
   const now = new Date();
 
   const startOfToday = new Date(now);
@@ -60,12 +61,7 @@ export async function getDashboardData() {
   const month = getMonthRange();
   const range = getDateRange(30);
 
-  /*
-   * ============================================================
-   * MÉTRICAS PRINCIPALES
-   * ============================================================
-   */
-
+  // 2. Métricas principales: cada consulta pertenece al usuario.
   const [
     todaySales,
     monthSales,
@@ -85,6 +81,7 @@ export async function getDashboardData() {
         id: true,
       },
       where: {
+        userId,
         createdAt: {
           gte: startOfToday,
           lte: endOfToday,
@@ -101,6 +98,7 @@ export async function getDashboardData() {
         id: true,
       },
       where: {
+        userId,
         createdAt: {
           gte: month.start,
           lte: month.end,
@@ -110,12 +108,14 @@ export async function getDashboardData() {
 
     prisma.product.count({
       where: {
+        userId,
         active: true,
       },
     }),
 
     prisma.product.count({
       where: {
+        userId,
         active: true,
         stock: {
           gt: 0,
@@ -125,6 +125,7 @@ export async function getDashboardData() {
 
     prisma.product.count({
       where: {
+        userId,
         active: true,
         stock: 0,
       },
@@ -138,6 +139,7 @@ export async function getDashboardData() {
         id: true,
       },
       where: {
+        userId,
         remaining: {
           gt: 0,
         },
@@ -146,6 +148,7 @@ export async function getDashboardData() {
 
     prisma.cashBox.findMany({
       where: {
+        userId,
         active: true,
       },
       select: {
@@ -167,6 +170,7 @@ export async function getDashboardData() {
         id: true,
       },
       where: {
+        userId,
         createdAt: {
           gte: month.start,
           lte: month.end,
@@ -175,14 +179,10 @@ export async function getDashboardData() {
     }),
   ]);
 
-  /*
-   * ============================================================
-   * VALOR DEL INVENTARIO
-   * ============================================================
-   */
-
+  // 3. Valor del inventario propio.
   const productsForInventory = await prisma.product.findMany({
     where: {
+      userId,
       active: true,
     },
     select: {
@@ -192,9 +192,10 @@ export async function getDashboardData() {
     },
   });
 
-  const inventoryValue = productsForInventory.reduce((total, product) => {
-    return total + product.stock * (product.costPrice ?? 0);
-  }, 0);
+  const inventoryValue = productsForInventory.reduce(
+    (total, product) => total + product.stock * (product.costPrice ?? 0),
+    0,
+  );
 
   const productsWithLowStock = productsForInventory.filter(
     (product) => product.stock > 0 && product.stock <= product.minStock,
@@ -205,14 +206,10 @@ export async function getDashboardData() {
     0,
   );
 
-  /*
-   * ============================================================
-   * VENTAS ÚLTIMOS 30 DÍAS
-   * ============================================================
-   */
-
+  // 4. Ventas de los últimos 30 días del usuario.
   const salesLast30Days = await prisma.sale.findMany({
     where: {
+      userId,
       createdAt: {
         gte: range.start,
         lte: range.end,
@@ -252,12 +249,7 @@ export async function getDashboardData() {
     });
   }
 
-  /*
-   * ============================================================
-   * PRODUCTOS MÁS VENDIDOS
-   * ============================================================
-   */
-
+  // 5. Productos más vendidos: solo ventas propias.
   const topProducts = await prisma.saleItem.groupBy({
     by: ["productId"],
     _sum: {
@@ -267,9 +259,12 @@ export async function getDashboardData() {
     },
     where: {
       sale: {
-        createdAt: {
-          gte: month.start,
-          lte: month.end,
+        is: {
+          userId,
+          createdAt: {
+            gte: month.start,
+            lte: month.end,
+          },
         },
       },
       productId: {
@@ -290,17 +285,24 @@ export async function getDashboardData() {
         return null;
       }
 
-      const product = await prisma.product.findUnique({
+      // No recuperar productos pertenecientes a otra cuenta.
+      const product = await prisma.product.findFirst({
         where: {
           id: item.productId,
+          userId,
         },
         select: {
           name: true,
         },
       });
 
+      // Si el producto no pertenece al usuario, no mostrarlo.
+      if (!product) {
+        return null;
+      }
+
       return {
-        name: product?.name ?? "Producto eliminado",
+        name: product.name,
         cantidad: item._sum.quantity ?? 0,
         ventas: item._sum.subtotal ?? 0,
         utilidad: item._sum.profit ?? 0,
@@ -312,12 +314,7 @@ export async function getDashboardData() {
     (product): product is NonNullable<typeof product> => product !== null,
   );
 
-  /*
-   * ============================================================
-   * MÉTODOS DE PAGO
-   * ============================================================
-   */
-
+  // 6. Métodos de pago propios.
   const paymentGroups = await prisma.sale.groupBy({
     by: ["paymentType"],
     _sum: {
@@ -327,6 +324,7 @@ export async function getDashboardData() {
       id: true,
     },
     where: {
+      userId,
       createdAt: {
         gte: month.start,
         lte: month.end,
@@ -340,44 +338,41 @@ export async function getDashboardData() {
     cantidad: payment._count.id,
   }));
 
-  /*
-   * ============================================================
-   * COMPRAS VS VENTAS
-   * ============================================================
-   */
-
-  const monthlySales = await prisma.sale.aggregate({
-    _sum: {
-      total: true,
-      profit: true,
-    },
-    where: {
-      createdAt: {
-        gte: month.start,
-        lte: month.end,
+  // 7. Comparación mensual de ventas y compras propias.
+  const [monthlySales, monthlyPurchases] = await Promise.all([
+    prisma.sale.aggregate({
+      _sum: {
+        total: true,
+        profit: true,
       },
-    },
-  });
-
-  const monthlyPurchases = await prisma.purchase.aggregate({
-    _sum: {
-      total: true,
-    },
-    where: {
-      createdAt: {
-        gte: month.start,
-        lte: month.end,
+      where: {
+        userId,
+        createdAt: {
+          gte: month.start,
+          lte: month.end,
+        },
       },
-    },
-  });
+    }),
 
-  /*
-   * ============================================================
-   * ÚLTIMAS VENTAS
-   * ============================================================
-   */
+    prisma.purchase.aggregate({
+      _sum: {
+        total: true,
+      },
+      where: {
+        userId,
+        createdAt: {
+          gte: month.start,
+          lte: month.end,
+        },
+      },
+    }),
+  ]);
 
+  // 8. Últimas ventas propias.
   const recentSales = await prisma.sale.findMany({
+    where: {
+      userId,
+    },
     take: 8,
     orderBy: {
       createdAt: "desc",
@@ -396,13 +391,11 @@ export async function getDashboardData() {
     },
   });
 
-  /*
-   * ============================================================
-   * ÚLTIMAS COMPRAS
-   * ============================================================
-   */
-
+  // 9. Últimas compras propias.
   const recentPurchases = await prisma.purchase.findMany({
+    where: {
+      userId,
+    },
     take: 8,
     orderBy: {
       createdAt: "desc",
@@ -416,14 +409,10 @@ export async function getDashboardData() {
     },
   });
 
-  /*
-   * ============================================================
-   * PRODUCTOS CON STOCK BAJO
-   * ============================================================
-   */
-
+  // 10. Productos propios con stock bajo.
   const lowStockProducts = await prisma.product.findMany({
     where: {
+      userId,
       active: true,
       stock: {
         lte: prisma.product.fields.minStock,
@@ -442,12 +431,7 @@ export async function getDashboardData() {
     take: 10,
   });
 
-  /*
-   * ============================================================
-   * RESULTADO
-   * ============================================================
-   */
-
+  // 11. Resultado con la misma estructura del dashboard.
   return {
     period: {
       start: range.start.toISOString(),
@@ -466,16 +450,13 @@ export async function getDashboardData() {
       monthSalesCount: monthSales._count.id,
 
       productsCount,
-
       lowStockCount: productsWithLowStock,
-
       outOfStockCount,
 
       pendingDebtAmount: pendingDebts._sum.remaining ?? 0,
       pendingDebtCount: pendingDebts._count.id,
 
       inventoryValue,
-
       totalCash,
 
       monthPurchases: monthPurchases._sum.total ?? 0,
@@ -484,9 +465,7 @@ export async function getDashboardData() {
 
     charts: {
       salesByDay,
-
       topProducts: cleanTopProducts,
-
       paymentMethods,
 
       salesVsPurchases: [
