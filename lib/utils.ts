@@ -14,3 +14,13 @@ export function getStockStatus(p: Product) {
 
   return "ok";
 }
+export function generateLotPrefix(productName: string): string {
+  return productName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase())
+    .join("");
+}

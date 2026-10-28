@@ -90,20 +90,24 @@ model Product {
   barcode     String? @unique
   description String?
 
-  unit       String    @default("unidad")
+  unit         String    @default("unidad")
   // price → precio actual de venta.
-  price      Float
+  price        Float
   // costPrice → costo actual de adquisición.
-  costPrice  Float
+  costPrice    Float
   // stock → existencias actuales.
-  stock      Int       @default(0)
+  stock        Int       @default(0)
   // minStock → límite para alertar de stock bajo.
-  minStock   Int       @default(0)
+  minStock     Int       @default(0)
+  // Codigo del Lote
+  lotCode      String?
+  //Dia de compra 
+  purchaseDate DateTime?
   // active → permite desactivar un producto sin borrarlo.
-  active     Boolean   @default(true)
+  active       Boolean   @default(true)
   // categoryId → relación con una categoría.
-  categoryId Int?
-  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId   Int?
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

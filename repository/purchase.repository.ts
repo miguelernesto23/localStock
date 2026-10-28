@@ -4,8 +4,9 @@ type PurchaseItemInput = {
   productId: number;
   quantity: number;
   unitCost: number;
+  lotCode?: string;
+  purchaseDate?: string;
 };
-
 type CreatePurchaseInput = {
   total: number;
   paymentType?: string;
@@ -17,34 +18,43 @@ type CreatePurchaseInput = {
 
 export async function createPurchaseRepo(data: CreatePurchaseInput) {
   return prisma.$transaction(async (tx) => {
-    // ==============================
-    // 1. Validaciones generales
-    // ==============================
-
     if (data.items.length === 0) {
       throw new Error("EMPTY_PURCHASE");
     }
 
-    // Calcular total real en el servidor
-    const calculatedTotal = data.items.reduce((sum, item) => {
-      return sum + item.quantity * item.unitCost;
-    }, 0);
+    for (const item of data.items) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+        throw new Error("INVALID_QUANTITY");
+      }
+
+      if (!Number.isFinite(item.unitCost) || item.unitCost < 0) {
+        throw new Error("INVALID_UNIT_COST");
+      }
+
+      if (item.lotCode !== undefined && !item.lotCode.trim()) {
+        throw new Error("INVALID_LOT_CODE");
+      }
+
+      if (
+        item.purchaseDate !== undefined &&
+        Number.isNaN(Date.parse(item.purchaseDate))
+      ) {
+        throw new Error("INVALID_PURCHASE_DATE");
+      }
+    }
+
+    const calculatedTotal = data.items.reduce(
+      (sum, item) => sum + item.quantity * item.unitCost,
+      0,
+    );
 
     if (!Number.isFinite(calculatedTotal) || calculatedTotal < 0) {
       throw new Error("INVALID_TOTAL");
     }
 
-    // ==============================
-    // 2. Validar compra a crédito
-    // ==============================
-
     if (data.paymentType === "CREDITO" && !data.supplierName?.trim()) {
       throw new Error("SUPPLIER_REQUIRED");
     }
-
-    // ==============================
-    // 3. Buscar caja si NO es crédito
-    // ==============================
 
     let cashBox = null;
 
@@ -68,10 +78,6 @@ export async function createPurchaseRepo(data: CreatePurchaseInput) {
       }
     }
 
-    // ==============================
-    // 4. Crear compra
-    // ==============================
-
     const purchase = await tx.purchase.create({
       data: {
         total: calculatedTotal,
@@ -82,90 +88,73 @@ export async function createPurchaseRepo(data: CreatePurchaseInput) {
       },
     });
 
-    // ==============================
-    // 5. Procesar productos
-    // ==============================
-
     for (const item of data.items) {
-      // Validar cantidad
-      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
-        throw new Error("INVALID_QUANTITY");
-      }
-
-      // Validar costo
-      if (!Number.isFinite(item.unitCost) || item.unitCost < 0) {
-        throw new Error("INVALID_UNIT_COST");
-      }
-
-      // Buscar producto
-      const product = await tx.product.findUnique({
+      const sourceProduct = await tx.product.findFirst({
         where: {
           id: item.productId,
+          userId: data.userId,
         },
       });
 
-      if (!product) {
+      if (!sourceProduct) {
         throw new Error("PRODUCT_NOT_FOUND");
       }
 
-      if (!product.active) {
+      if (!sourceProduct.active) {
         throw new Error("PRODUCT_INACTIVE");
       }
 
-      const subtotal = item.quantity * item.unitCost;
+      const purchaseDate = item.purchaseDate
+        ? new Date(item.purchaseDate)
+        : new Date();
 
-      // ==============================
-      // Detalle de compra
-      // ==============================
+      const lotCode =
+        item.lotCode?.trim() || `LOTE-${purchase.id}-${sourceProduct.id}`;
+
+      // Cada compra crea un producto independiente que representa el lote.
+      const lot = await tx.product.create({
+        data: {
+          name: sourceProduct.name,
+          barcode: null,
+          description: sourceProduct.description,
+          unit: sourceProduct.unit,
+          price: sourceProduct.price,
+          costPrice: item.unitCost,
+          stock: item.quantity,
+          minStock: sourceProduct.minStock,
+          active: true,
+          categoryId: sourceProduct.categoryId,
+          userId: data.userId,
+          lotCode,
+          purchaseDate,
+        },
+      });
+
+      const subtotal = item.quantity * item.unitCost;
 
       await tx.purchaseItem.create({
         data: {
           quantity: item.quantity,
           unitCost: item.unitCost,
           subtotal,
-          productName: product.name,
+          productName: lot.name,
           purchaseId: purchase.id,
-          productId: product.id,
+          productId: lot.id,
         },
       });
-
-      // ==============================
-      // Actualizar producto
-      // ==============================
-
-      await tx.product.update({
-        where: {
-          id: product.id,
-        },
-        data: {
-          stock: {
-            increment: item.quantity,
-          },
-          costPrice: item.unitCost,
-        },
-      });
-
-      // ==============================
-      // Movimiento de inventario
-      // ==============================
 
       await tx.stockMovement.create({
         data: {
           type: "PURCHASE",
           quantity: item.quantity,
-          note: `Compra #${purchase.id}`,
-          productId: product.id,
+          note: `Compra #${purchase.id} — Lote ${lotCode}`,
+          productId: lot.id,
           userId: data.userId,
         },
       });
     }
 
-    // ==============================
-    // 6. Actualizar capital
-    // ==============================
-
     if (cashBox) {
-      // Restar dinero de la caja
       await tx.cashBox.update({
         where: {
           id: cashBox.id,
@@ -177,7 +166,6 @@ export async function createPurchaseRepo(data: CreatePurchaseInput) {
         },
       });
 
-      // Registrar movimiento de caja
       await tx.cashMovement.create({
         data: {
           type: "PURCHASE",
@@ -190,10 +178,6 @@ export async function createPurchaseRepo(data: CreatePurchaseInput) {
         },
       });
     }
-
-    // ==============================
-    // 7. Compra a crédito
-    // ==============================
 
     if (data.paymentType === "CREDITO") {
       await tx.debt.create({
@@ -209,10 +193,6 @@ export async function createPurchaseRepo(data: CreatePurchaseInput) {
         },
       });
     }
-
-    // ==============================
-    // 8. Retornar compra
-    // ==============================
 
     return purchase;
   });

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 export function proxy(request: NextRequest) {
   const session = request.cookies.get("Sesion")?.value;
+  const pathname = request.nextUrl.pathname;
 
-  if (!session) {
+  if (!session && pathname !== "/login") {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -11,5 +12,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/"],
+  matcher: ["/((?!login|_next/static|_next/image|favicon.ico).*)"],
 };

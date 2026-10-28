@@ -5,16 +5,21 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import Link from "next/link";
+import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
 
 import { saleSchema, type SaleFormData } from "@/schema/sale.schema";
-
 import { createSale } from "@/action/sale.action";
 import { getProducts } from "@/action/product.action";
 
 import { Button } from "@/components/ui/button";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -23,17 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import {
-  ArrowLeft,
-  Minus,
-  Plus,
-  ShoppingCart,
-  Trash2,
-  CreditCard,
-  Package,
-  Banknote,
-} from "lucide-react";
-
 type Product = {
   id: number;
   name: string;
@@ -41,15 +35,35 @@ type Product = {
   price: number;
   stock: number;
   active: boolean;
+  lotCode: string | null;
+  purchaseDate: Date | string | null;
 };
 
 type SaleItem = {
   productId: number;
   name: string;
+  lotCode: string | null;
+  purchaseDate: Date | string | null;
   quantity: number;
   unitPrice: number;
   stock: number;
 };
+
+const currency = new Intl.NumberFormat("es", {
+  style: "currency",
+  currency: "CUP",
+  maximumFractionDigits: 2,
+});
+
+function formatDate(value: Date | string | null) {
+  if (!value) return "Sin fecha";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+
+  return date.toLocaleDateString("es");
+}
 
 export default function NewSalePage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -59,9 +73,10 @@ export default function NewSalePage() {
   const [saving, setSaving] = useState(false);
 
   const {
-    setValue,
-    handleSubmit,
     control,
+    handleSubmit,
+    setValue,
+    reset,
     formState: { errors },
   } = useForm<SaleFormData>({
     resolver: zodResolver(saleSchema),
@@ -75,342 +90,317 @@ export default function NewSalePage() {
     control,
     name: "paymentType",
   });
-  // -----------------------------------------
-  // Cargar productos
-  // -----------------------------------------
 
+  // Carga inicial: el estado se actualiza después de la petición.
   useEffect(() => {
-    async function loadProducts() {
-      setLoadingProducts(true);
+    let cancelled = false;
 
-      const result = await getProducts();
+    async function load() {
+      try {
+        const result = await getProducts();
 
-      if (result.success) {
-        setProducts(
-          result.products.filter(
-            (product) => product.active && product.stock > 0,
-          ),
-        );
-      } else {
-        console.log(result.error);
+        if (cancelled) return;
+
+        if (result.success) {
+          setProducts(
+            result.products.filter(
+              (product) => product.active && product.stock > 0,
+            ) as Product[],
+          );
+        } else {
+          toast.error("No se pudieron cargar los productos.");
+        }
+      } catch {
+        if (!cancelled) {
+          toast.error("Ocurrió un error al cargar los productos.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingProducts(false);
+        }
       }
-
-      setLoadingProducts(false);
     }
 
-    loadProducts();
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // -----------------------------------------
-  // Sincronizar items con React Hook Form
-  // -----------------------------------------
+  // Mantiene el estado visual y los datos del formulario sincronizados.
+  function updateSaleItems(nextItems: SaleItem[]) {
+    setItems(nextItems);
 
-  useEffect(() => {
     setValue(
       "items",
-      items.map((item) => ({
+      nextItems.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
       })),
       {
         shouldValidate: true,
+        shouldDirty: true,
       },
     );
-  }, [items, setValue]);
+  }
 
-  // -----------------------------------------
-  // Total
-  // -----------------------------------------
+  async function refreshProducts() {
+    try {
+      const result = await getProducts();
 
-  const total = useMemo(() => {
-    return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  }, [items]);
-
-  // -----------------------------------------
-  // Agregar producto
-  // -----------------------------------------
+      if (result.success) {
+        setProducts(
+          result.products.filter(
+            (product) => product.active && product.stock > 0,
+          ) as Product[],
+        );
+      }
+    } catch {
+      toast.error("No se pudo actualizar el inventario.");
+    }
+  }
 
   function addProduct() {
-    if (!selectedProductId) {
-      console.log("Selecciona un producto.");
-      toast.warning("Selecciona un producto", { position: "top-center" });
-      return;
-    }
-
-    const productId = Number(selectedProductId);
-
-    const product = products.find((product) => product.id === productId);
+    const product = products.find(
+      (item) => String(item.id) === selectedProductId,
+    );
 
     if (!product) {
-      console.log("Producto no encontrado.");
+      toast.error("Selecciona un lote para añadirlo a la venta.");
       return;
     }
 
-    const existingItem = items.find((item) => item.productId === product.id);
+    const existing = items.find((item) => item.productId === product.id);
 
-    if (existingItem) {
-      if (existingItem.quantity >= product.stock) {
-        console.log("No puedes superar el stock disponible.");
-        toast.warning("No puedes superar el stock disponible.", {
-          position: "top-center",
-        });
+    if (existing) {
+      if (existing.quantity >= existing.stock) {
+        toast.warning("No hay más unidades disponibles de este lote.");
         return;
       }
 
-      setItems((current) =>
-        current.map((item) =>
+      updateSaleItems(
+        items.map((item) =>
           item.productId === product.id
-            ? {
-                ...item,
-                quantity: item.quantity + 1,
-              }
+            ? { ...item, quantity: item.quantity + 1 }
             : item,
         ),
       );
-
-      return;
+    } else {
+      updateSaleItems([
+        ...items,
+        {
+          productId: product.id,
+          name: product.name,
+          lotCode: product.lotCode,
+          purchaseDate: product.purchaseDate,
+          quantity: 1,
+          unitPrice: product.price,
+          stock: product.stock,
+        },
+      ]);
     }
-
-    setItems((current) => [
-      ...current,
-      {
-        productId: product.id,
-        name: product.name,
-        quantity: 1,
-        unitPrice: product.price,
-        stock: product.stock,
-      },
-    ]);
 
     setSelectedProductId("");
   }
 
-  // -----------------------------------------
-  // Cambiar cantidad
-  // -----------------------------------------
-
   function changeQuantity(productId: number, amount: number) {
-    setItems((current) =>
-      current
-        .map((item) => {
-          if (item.productId !== productId) {
-            return item;
-          }
+    const current = items.find((item) => item.productId === productId);
 
-          const newQuantity = item.quantity + amount;
+    if (!current) return;
 
-          if (newQuantity <= 0) {
-            return null;
-          }
+    const quantity = current.quantity + amount;
 
-          if (newQuantity > item.stock) {
-            console.log("No hay suficiente stock.");
-            toast.warning("No hay suficiente stock.", {
-              position: "top-center",
-            });
-            return item;
-          }
+    if (quantity < 1) {
+      updateSaleItems(items.filter((item) => item.productId !== productId));
+      return;
+    }
 
-          return {
-            ...item,
-            quantity: newQuantity,
-          };
-        })
-        .filter((item): item is SaleItem => item !== null),
+    if (quantity > current.stock) {
+      toast.warning("La cantidad supera el stock disponible del lote.");
+      return;
+    }
+
+    updateSaleItems(
+      items.map((item) =>
+        item.productId === productId ? { ...item, quantity } : item,
+      ),
     );
   }
 
-  // -----------------------------------------
-  // Eliminar producto
-  // -----------------------------------------
+  function setItemQuantity(productId: number, value: string) {
+    const current = items.find((item) => item.productId === productId);
+
+    if (!current) return;
+
+    // Permite dejar el campo vacío mientras se escribe.
+    if (value === "") {
+      updateSaleItems(
+        items.map((item) =>
+          item.productId === productId ? { ...item, quantity: 0 } : item,
+        ),
+      );
+      return;
+    }
+
+    const quantity = Number(value);
+
+    if (!Number.isInteger(quantity) || quantity < 1) return;
+
+    if (quantity > current.stock) {
+      toast.warning("La cantidad supera el stock disponible del lote.");
+      return;
+    }
+
+    updateSaleItems(
+      items.map((item) =>
+        item.productId === productId ? { ...item, quantity } : item,
+      ),
+    );
+  }
+
+  function normalizeQuantity(productId: number) {
+    updateSaleItems(
+      items.map((item) =>
+        item.productId === productId && item.quantity < 1
+          ? { ...item, quantity: 1 }
+          : item,
+      ),
+    );
+  }
 
   function removeItem(productId: number) {
-    setItems((current) =>
-      current.filter((item) => item.productId !== productId),
-    );
+    updateSaleItems(items.filter((item) => item.productId !== productId));
   }
 
-  // -----------------------------------------
-  // Registrar venta
-  // -----------------------------------------
+  const total = useMemo(
+    () => items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0),
+    [items],
+  );
 
   async function onSubmit(data: SaleFormData) {
     if (items.length === 0) {
-      console.log("Agrega al menos un producto.");
-      toast.warning("Agrega al menos un producto", { position: "top-center" });
+      toast.error("Añade al menos un lote a la venta.");
+      return;
+    }
+
+    if (items.some((item) => item.quantity < 1)) {
+      toast.error("Todas las cantidades deben ser mayores que cero.");
       return;
     }
 
     setSaving(true);
 
-    const result = await createSale({
-      paymentType: data.paymentType,
-      items: data.items,
-    });
+    try {
+      const result = await createSale({
+        paymentType: data.paymentType,
+        items: data.items,
+      });
 
-    if (!result.success) {
-      console.log(result.error);
+      if (!result.success) {
+        toast.error(
+          "No se pudo registrar la venta. Comprueba el stock e inténtalo de nuevo.",
+        );
+        return;
+      }
+
+      toast.success("Venta registrada correctamente.");
+
+      updateSaleItems([]);
+      reset({
+        paymentType: "EFECTIVO",
+        items: [],
+      });
+      setSelectedProductId("");
+
+      await refreshProducts();
+    } catch {
+      toast.error("Ocurrió un error al registrar la venta.");
+    } finally {
       setSaving(false);
-      return;
-    }
-
-    console.log(`Venta #${result.sale.id} registrada correctamente.`);
-    toast.success(`Venta #${result.sale.id} registrada correctamente.`, {
-      position: "top-center",
-    });
-    setItems([]);
-    setSelectedProductId("");
-    setSaving(false);
-
-    const productsResult = await getProducts();
-
-    if (productsResult.success) {
-      setProducts(
-        productsResult.products.filter(
-          (product) => product.active && product.stock > 0,
-        ),
-      );
     }
   }
 
   return (
-    <div className="container mx-auto max-w-6xl space-y-6">
-      {/* Header */}
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-            <Link
-              href="/sales"
-              className="transition-colors hover:text-foreground"
-            >
-              Ventas
-            </Link>
-
-            <span>/</span>
-
-            <span>Nueva venta</span>
-          </div>
-
-          <h1 className="text-3xl font-bold tracking-tight">Registrar venta</h1>
-
-          <p className="text-muted-foreground">
-            Selecciona los productos y completa la venta.
-          </p>
-        </div>
-
-        <Button variant="outline" asChild>
-          <Link href="/sales">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Volver
+    <div className="mx-auto max-w-5xl space-y-6 ">
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="icon" asChild>
+          <Link href="/sales" aria-label="Volver a ventas">
+            <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
+
+        <div>
+          <h1 className="text-2xl font-bold">Nueva venta</h1>
+          <p className="text-sm text-muted-foreground">
+            Selecciona los lotes y las cantidades que deseas vender.
+          </p>
+        </div>
       </div>
 
-      {/* Formulario completo */}
-
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <Card className="overflow-hidden">
-          {/* Header de la Card */}
-
-          <CardHeader className="border-b bg-muted/30">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5" />
-                Nueva venta
-              </CardTitle>
-
-              <span className="text-sm text-muted-foreground">
-                {items.length} producto(s)
-              </span>
-            </div>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Forma de pago</CardTitle>
+            <CardDescription>
+              Selecciona cómo se realizará el pago.
+            </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-8 p-6">
-            {/* -------------------------------- */}
-            {/* Método de pago */}
-            {/* -------------------------------- */}
+          <CardContent className="space-y-2">
+            <Select
+              value={paymentType}
+              onValueChange={(value) =>
+                setValue("paymentType", value as SaleFormData["paymentType"], {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar forma de pago" />
+              </SelectTrigger>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-muted-foreground" />
+              <SelectContent>
+                <SelectItem value="EFECTIVO">Efectivo</SelectItem>
+                <SelectItem value="TRANSFERENCIA">Transferencia</SelectItem>
+                <SelectItem value="CREDIT">Crédito</SelectItem>
+              </SelectContent>
+            </Select>
 
-                <h2 className="font-semibold">Método de pago</h2>
-              </div>
+            {errors.paymentType && (
+              <p className="text-sm text-destructive">
+                {errors.paymentType.message}
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-              <div className="max-w-md">
-                <Select
-                  value={paymentType}
-                  onValueChange={(value) =>
-                    setValue(
-                      "paymentType",
-                      value as SaleFormData["paymentType"],
-                      {
-                        shouldValidate: true,
-                      },
-                    )
-                  }
-                >
-                  <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Selecciona un método" />
-                  </SelectTrigger>
+        <Card>
+          <CardHeader>
+            <CardTitle>Añadir productos</CardTitle>
+            <CardDescription>
+              Cada opción representa un lote específico del inventario.
+            </CardDescription>
+          </CardHeader>
 
-                  <SelectContent>
-                    <SelectItem value="EFECTIVO">Efectivo</SelectItem>
-
-                    <SelectItem value="TRANSFERENCIA">Transferencia</SelectItem>
-
-                    <SelectItem value="CREDITO">Crédito</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {errors.paymentType && (
-                  <p className="mt-1 text-sm text-destructive">
-                    {errors.paymentType.message}
-                  </p>
-                )}
-              </div>
-
-              {paymentType === "CREDITO" && (
-                <div className="rounded-lg border bg-muted/40 p-4">
-                  <p className="font-medium">Venta a crédito</p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    El stock será descontado, pero el capital no aumentará. Se
-                    generará una deuda para el cliente.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Separador */}
-
-            <div className="border-t" />
-
-            {/* -------------------------------- */}
-            {/* Agregar productos */}
-            {/* -------------------------------- */}
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Package className="h-4 w-4 text-muted-foreground" />
-
-                <h2 className="font-semibold">Agregar productos</h2>
-              </div>
-
-              <div className="flex gap-2">
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="min-w-0 flex-1">
                 <Select
                   value={selectedProductId}
                   onValueChange={setSelectedProductId}
-                  disabled={loadingProducts}
+                  disabled={loadingProducts || products.length === 0}
                 >
-                  <SelectTrigger className="h-11 flex-1">
+                  <SelectTrigger>
                     <SelectValue
                       placeholder={
                         loadingProducts
                           ? "Cargando productos..."
-                          : "Selecciona un producto"
+                          : products.length === 0
+                            ? "No hay lotes disponibles"
+                            : "Seleccionar producto o lote"
                       }
                     />
                   </SelectTrigger>
@@ -418,202 +408,196 @@ export default function NewSalePage() {
                   <SelectContent>
                     {products.map((product) => (
                       <SelectItem key={product.id} value={String(product.id)}>
-                        <div className="flex items-center justify-between gap-4">
-                          <span>{product.name}</span>
-
-                          <span className="text-muted-foreground">
-                            Stock: {product.stock}
-                          </span>
-                        </div>
+                        {product.name}
+                        {" · "}
+                        Lote {product.lotCode || `#${product.id}`}
+                        {" · "}
+                        Stock: {product.stock}
+                        {" · "}
+                        {currency.format(product.price)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-
-                <Button
-                  type="button"
-                  onClick={addProduct}
-                  disabled={loadingProducts}
-                  size="icon"
-                  className="h-11 w-11 shrink-0"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
               </div>
+
+              <Button
+                type="button"
+                onClick={addProduct}
+                disabled={!selectedProductId || loadingProducts}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Añadir lote
+              </Button>
             </div>
+          </CardContent>
+        </Card>
 
-            {/* -------------------------------- */}
-            {/* Productos */}
-            {/* -------------------------------- */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Productos de la venta</CardTitle>
+            <CardDescription>
+              Ajusta la cantidad y el precio de cada lote.
+            </CardDescription>
+          </CardHeader>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold">Productos de la venta</h2>
-
-                <span className="text-sm text-muted-foreground">
-                  {items.reduce((sum, item) => sum + item.quantity, 0)}{" "}
-                  unidad(es)
-                </span>
+          <CardContent className="space-y-4">
+            {items.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                Todavía no has añadido ningún lote.
               </div>
+            ) : (
+              <div className="space-y-4">
+                {items.map((item) => (
+                  <div key={item.productId} className="rounded-lg border p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-medium">{item.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Lote: {item.lotCode || `#${item.productId}`}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Compra: {formatDate(item.purchaseDate)}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Stock disponible: {item.stock}
+                        </p>
+                      </div>
 
-              {items.length === 0 ? (
-                <div className="flex min-h-55 flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center">
-                  <ShoppingCart className="mb-3 h-10 w-10 text-muted-foreground" />
-
-                  <p className="font-medium">No hay productos</p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Selecciona un producto arriba para agregarlo a la venta.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-hidden rounded-xl border">
-                  {/* Cabecera */}
-
-                  <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 border-b bg-muted/40 px-4 py-3 text-sm font-medium text-muted-foreground md:grid">
-                    <span>Producto</span>
-                    <span>Cantidad</span>
-                    <span>Precio</span>
-                    <span className="text-right">Subtotal</span>
-                    <span />
-                  </div>
-
-                  {/* Items */}
-
-                  <div className="divide-y">
-                    {items.map((item) => (
-                      <div
-                        key={item.productId}
-                        className="grid gap-4 p-4 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center"
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeItem(item.productId)}
+                        aria-label={`Eliminar ${item.name}`}
                       >
-                        {/* Producto */}
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
 
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{item.name}</p>
+                    <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+                      <div className="space-y-2">
+                        <label
+                          htmlFor={`quantity-${item.productId}`}
+                          className="text-sm font-medium"
+                        >
+                          Cantidad
+                        </label>
 
-                          <p className="text-sm text-muted-foreground">
-                            Stock disponible: {item.stock}
-                          </p>
-                        </div>
-
-                        {/* Cantidad */}
-
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8"
                             onClick={() => changeQuantity(item.productId, -1)}
+                            aria-label="Disminuir cantidad"
                           >
-                            <Minus className="h-3.5 w-3.5" />
+                            <Minus className="h-4 w-4" />
                           </Button>
 
-                          <span className="w-9 text-center font-medium">
-                            {item.quantity}
-                          </span>
+                          <Input
+                            id={`quantity-${item.productId}`}
+                            type="number"
+                            min={1}
+                            max={item.stock}
+                            step={1}
+                            value={item.quantity === 0 ? "" : item.quantity}
+                            className="h-9 w-24 text-center"
+                            onChange={(event) =>
+                              setItemQuantity(
+                                item.productId,
+                                event.target.value,
+                              )
+                            }
+                            onBlur={() => normalizeQuantity(item.productId)}
+                          />
 
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8"
+                            disabled={item.quantity >= item.stock}
                             onClick={() => changeQuantity(item.productId, 1)}
+                            aria-label="Aumentar cantidad"
                           >
-                            <Plus className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-
-                        {/* Precio */}
-
-                        <div className="text-sm">
-                          <span className="text-muted-foreground md:hidden">
-                            Precio:{" "}
-                          </span>
-                          {item.unitPrice.toLocaleString("es-CU")} CUP
-                        </div>
-
-                        {/* Subtotal */}
-
-                        <div className="font-semibold md:text-right">
-                          <span className="mr-2 text-sm font-normal text-muted-foreground md:hidden">
-                            Subtotal:
-                          </span>
-                          {(item.quantity * item.unitPrice).toLocaleString(
-                            "es-CU",
-                          )}{" "}
-                          CUP
-                        </div>
-
-                        {/* Eliminar */}
-
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeItem(item.productId)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Plus className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
-                    ))}
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor={`price-${item.productId}`}
+                          className="text-sm font-medium"
+                        >
+                          Precio unitario
+                        </label>
+
+                        <Input
+                          id={`price-${item.productId}`}
+                          type="number"
+                          min={0.01}
+                          step="0.01"
+                          value={item.unitPrice}
+                          className="w-36"
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+
+                            if (!Number.isFinite(value) || value <= 0) return;
+
+                            updateSaleItems(
+                              items.map((current) =>
+                                current.productId === item.productId
+                                  ? { ...current, unitPrice: value }
+                                  : current,
+                              ),
+                            );
+                          }}
+                        />
+                      </div>
+
+                      <div className="min-w-28 text-right">
+                        <p className="text-xs text-muted-foreground">
+                          Subtotal
+                        </p>
+                        <p className="font-semibold">
+                          {currency.format(item.quantity * item.unitPrice)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-
-            {/* -------------------------------- */}
-            {/* Resumen */}
-            {/* -------------------------------- */}
-
-            <div className="border-t pt-6">
-              <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Banknote className="h-4 w-4" />
-
-                    <span>Método de pago:</span>
-
-                    <span className="font-medium text-foreground">
-                      {paymentType === "EFECTIVO"
-                        ? "Efectivo"
-                        : paymentType === "TRANSFERENCIA"
-                          ? "Transferencia"
-                          : "Crédito"}
-                    </span>
-                  </div>
-
-                  <p className="text-sm text-muted-foreground">
-                    {items.reduce((sum, item) => sum + item.quantity, 0)}{" "}
-                    unidad(es) en {items.length} producto(s)
-                  </p>
-                </div>
-
-                <div className="sm:text-right">
-                  <p className="text-sm text-muted-foreground">
-                    Total de la venta
-                  </p>
-
-                  <p className="text-4xl font-bold tracking-tight">
-                    {total.toLocaleString("es-CU")}{" "}
-                    <span className="text-xl font-medium">CUP</span>
-                  </p>
-                </div>
+                ))}
               </div>
+            )}
 
-              {/* Botón */}
+            {errors.items && (
+              <p className="text-sm text-destructive">{errors.items.message}</p>
+            )}
 
-              <Button
-                type="submit"
-                className="mt-6 h-12 w-full text-base"
-                size="lg"
-                disabled={saving || items.length === 0}
-              >
-                {saving ? "Registrando venta..." : "Registrar venta"}
-              </Button>
+            <div className="flex items-center justify-between border-t pt-4">
+              <span className="text-lg font-semibold">Total de la venta</span>
+              <span className="text-2xl font-bold">
+                {currency.format(total)}
+              </span>
             </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={
+                saving ||
+                loadingProducts ||
+                items.length === 0 ||
+                items.some(
+                  (item) =>
+                    item.quantity < 1 ||
+                    item.quantity > item.stock ||
+                    item.unitPrice <= 0,
+                )
+              }
+            >
+              {saving ? "Registrando venta..." : "Registrar venta"}
+            </Button>
           </CardContent>
         </Card>
       </form>

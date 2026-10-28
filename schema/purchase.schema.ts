@@ -1,12 +1,29 @@
+
 import { z } from "zod";
 
 export const purchaseItemSchema = z.object({
   productId: z.number().int().positive(),
+
   quantity: z
     .number()
     .int("La cantidad debe ser un número entero")
     .positive("La cantidad debe ser mayor que 0"),
-  unitCost: z.number().nonnegative("El costo no puede ser negativo"),
+
+  unitCost: z
+    .number()
+    .nonnegative("El costo unitario no puede ser negativo"),
+
+  lotCode: z
+    .string()
+    .trim()
+    .max(100, "El código del lote es demasiado largo")
+    .optional()
+    .or(z.literal("")),
+
+  purchaseDate: z
+    .string()
+    .optional()
+    .or(z.literal("")),
 });
 
 export const purchaseSchema = z.object({
@@ -31,9 +48,8 @@ export const purchaseSchema = z.object({
 
   items: z
     .array(purchaseItemSchema)
-    .min(1, "La compra debe tener al menos un producto"),
+    .min(1, "Debes añadir al menos un producto"),
 });
 
 export type PurchaseItemFormData = z.infer<typeof purchaseItemSchema>;
-
 export type PurchaseFormData = z.infer<typeof purchaseSchema>;
