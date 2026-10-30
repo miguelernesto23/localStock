@@ -1,4 +1,6 @@
 import Link from "next/link";
+import type { ElementType } from "react";
+
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -21,12 +23,20 @@ import { TopProductsChart } from "@/components/dashboard/charts/top-products-cha
 import { PaymentMethodsChart } from "@/components/dashboard/charts/payment-methods-chart";
 import { SalesPurchasesChart } from "@/components/dashboard/charts/sales-purchases-chart";
 
+// ----------------------------------------------------------
+// FORMATO DE MONEDA
+// ----------------------------------------------------------
+
 function formatCurrency(value: number) {
   return `${value.toLocaleString("es-CU", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   })} CUP`;
 }
+
+// ----------------------------------------------------------
+// TARJETA DE MÉTRICA
+// ----------------------------------------------------------
 
 function MetricCard({
   title,
@@ -38,7 +48,7 @@ function MetricCard({
   title: string;
   value: string;
   description: string;
-  icon: React.ElementType;
+  icon: ElementType;
   iconClassName: string;
 }) {
   return (
@@ -64,14 +74,19 @@ function MetricCard({
   );
 }
 
+// ----------------------------------------------------------
+// DASHBOARD PAGE
+// ----------------------------------------------------------
+
 export default async function DashboardPage() {
   const data = await getDashboardData();
 
   const { metrics, charts } = data;
 
   return (
-    <main className="container mx-auto max-w-7xl space-y-8 ">
+    <main className="container mx-auto max-w-7xl space-y-8">
       {/* HEADER */}
+
       <section>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -105,6 +120,7 @@ export default async function DashboardPage() {
       </section>
 
       {/* MÉTRICAS PRINCIPALES */}
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Ventas de hoy"
@@ -125,7 +141,7 @@ export default async function DashboardPage() {
         <MetricCard
           title="Utilidad del mes"
           value={formatCurrency(metrics.monthProfit)}
-          description="Ganancia estimada"
+          description="Ganancia registrada de las ventas"
           icon={ArrowUpFromLine}
           iconClassName="bg-cyan-500/10 text-cyan-500"
         />
@@ -140,11 +156,12 @@ export default async function DashboardPage() {
       </section>
 
       {/* INVENTARIO */}
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Productos activos"
           value={metrics.productsCount.toString()}
-          description="Productos disponibles"
+          description="Productos disponibles en el catálogo"
           icon={Boxes}
           iconClassName="bg-violet-500/10 text-violet-500"
         />
@@ -152,7 +169,7 @@ export default async function DashboardPage() {
         <MetricCard
           title="Valor del inventario"
           value={formatCurrency(metrics.inventoryValue)}
-          description="Según costo de adquisición"
+          description="Valorado según costo de adquisición"
           icon={Package}
           iconClassName="bg-blue-500/10 text-blue-500"
         />
@@ -160,7 +177,7 @@ export default async function DashboardPage() {
         <MetricCard
           title="Stock bajo"
           value={metrics.lowStockCount.toString()}
-          description="Requieren reposición"
+          description="Productos que requieren reposición"
           icon={TriangleAlert}
           iconClassName="bg-orange-500/10 text-orange-500"
         />
@@ -168,13 +185,14 @@ export default async function DashboardPage() {
         <MetricCard
           title="Agotados"
           value={metrics.outOfStockCount.toString()}
-          description="Sin unidades disponibles"
+          description="Productos sin existencias"
           icon={ArrowDownToLine}
           iconClassName="bg-red-500/10 text-red-500"
         />
       </section>
 
-      {/* DEUDAS */}
+      {/* DEUDAS Y COMPRAS */}
+
       <section className="grid gap-4 sm:grid-cols-2">
         <Card className="border-orange-500/20 bg-orange-500/3">
           <CardContent className="flex items-center justify-between p-6">
@@ -221,7 +239,8 @@ export default async function DashboardPage() {
         </Card>
       </section>
 
-      {/* VENTAS */}
+      {/* VENTAS DE LOS ÚLTIMOS 30 DÍAS */}
+
       <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Ventas de los últimos 30 días</CardTitle>
@@ -236,7 +255,8 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* PRODUCTOS + MÉTODOS DE PAGO */}
+      {/* PRODUCTOS MÁS VENDIDOS Y MÉTODOS DE PAGO */}
+
       <section className="grid gap-6 lg:grid-cols-2">
         <Card className="overflow-hidden">
           <CardHeader>
@@ -268,6 +288,7 @@ export default async function DashboardPage() {
       </section>
 
       {/* COMPRAS VS VENTAS */}
+
       <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Ventas vs compras</CardTitle>
@@ -282,7 +303,8 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* STOCK BAJO */}
+      {/* PRODUCTOS CON STOCK BAJO */}
+
       {data.lowStockProducts.length > 0 && (
         <Card className="overflow-hidden">
           <CardHeader>
@@ -316,16 +338,8 @@ export default async function DashboardPage() {
                     </p>
                   </div>
 
-                  <div
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      product.stock === 0
-                        ? "bg-red-500/10 text-red-600"
-                        : "bg-orange-500/10 text-orange-600"
-                    }`}
-                  >
-                    {product.stock === 0
-                      ? "Agotado"
-                      : `${product.stock} ${product.unit}`}
+                  <div className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-semibold text-orange-600">
+                    {product.stock} {product.unit}
                   </div>
                 </div>
               ))}

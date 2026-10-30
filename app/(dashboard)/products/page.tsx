@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 
 import { Loader2, Pencil, Plus, Power, PowerOff, Search } from "lucide-react";
 
-import type { Product } from "@/generated/prisma/client";
+import type { ProductWithCategory } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,24 +32,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 import { StockChart } from "@/components/products/charts/stock-chart";
 import { BestSellingChart } from "@/components/products/charts/best-selling-chart";
-
-type ProductWithCategory = Product & {
-  category: {
-    id: number;
-    name: string;
-  } | null;
-};
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [editingProduct, setEditingProduct] =
     useState<ProductWithCategory | null>(null);
 
   const [search, setSearch] = useState("");
+
   const [bestSellingProducts, setBestSellingProducts] = useState<
     {
       id: number;
@@ -57,9 +53,10 @@ export default function ProductsPage() {
       sold: number;
     }[]
   >([]);
-  // =========================
-  // Filtrar productos
-  // =========================
+
+  // --------------------------------------------------------
+  // FILTRAR PRODUCTOS
+  // --------------------------------------------------------
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -79,9 +76,9 @@ export default function ProductsPage() {
     });
   }, [products, search]);
 
-  // =========================
-  // Cargar productos
-  // =========================
+  // --------------------------------------------------------
+  // CARGAR PRODUCTOS
+  // --------------------------------------------------------
 
   useEffect(() => {
     let cancelled = false;
@@ -120,17 +117,17 @@ export default function ProductsPage() {
     };
   }, []);
 
-  // =========================
-  // Crear producto
-  // =========================
+  // --------------------------------------------------------
+  // CREAR PRODUCTO
+  // --------------------------------------------------------
 
   const handleCreated = (product: ProductWithCategory) => {
     setProducts((current) => [product, ...current]);
   };
 
-  // =========================
-  // Activar / Desactivar
-  // =========================
+  // --------------------------------------------------------
+  // ACTIVAR / DESACTIVAR
+  // --------------------------------------------------------
 
   const handleToggleActive = async (product: ProductWithCategory) => {
     try {
@@ -159,19 +156,11 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      {/* =========================
-          Header
-      ========================== */}
+      {/* HEADER */}
 
       <motion.div
-        initial={{
-          opacity: 0,
-          y: -15,
-        }}
-        animate={{
-          opacity: 1,
-          y: 0,
-        }}
+        initial={{ opacity: 0, y: -15 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{
           duration: 0.45,
           ease: "easeOut",
@@ -180,14 +169,8 @@ export default function ProductsPage() {
       >
         <div>
           <motion.h1
-            initial={{
-              opacity: 0,
-              x: -10,
-            }}
-            animate={{
-              opacity: 1,
-              x: 0,
-            }}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
             transition={{
               duration: 0.4,
               delay: 0.05,
@@ -198,14 +181,8 @@ export default function ProductsPage() {
           </motion.h1>
 
           <motion.p
-            initial={{
-              opacity: 0,
-              x: -10,
-            }}
-            animate={{
-              opacity: 1,
-              x: 0,
-            }}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
             transition={{
               duration: 0.4,
               delay: 0.1,
@@ -216,20 +193,11 @@ export default function ProductsPage() {
           </motion.p>
         </div>
 
-        {/* =========================
-            Nuevo producto
-        ========================== */}
+        {/* NUEVO PRODUCTO */}
 
         <Sheet>
           <SheetTrigger asChild>
-            <motion.div
-              whileHover={{
-                scale: 1.03,
-              }}
-              whileTap={{
-                scale: 0.97,
-              }}
-            >
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
                 Nuevo producto
@@ -246,9 +214,7 @@ export default function ProductsPage() {
           </SheetContent>
         </Sheet>
 
-        {/* =========================
-            Editar producto
-        ========================== */}
+        {/* EDITAR PRODUCTO */}
 
         <Sheet
           open={editingProduct !== null}
@@ -267,21 +233,10 @@ export default function ProductsPage() {
               {editingProduct && (
                 <motion.div
                   key={editingProduct.id}
-                  initial={{
-                    opacity: 0,
-                    x: 20,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    x: 0,
-                  }}
-                  exit={{
-                    opacity: 0,
-                    x: 20,
-                  }}
-                  transition={{
-                    duration: 0.25,
-                  }}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.25 }}
                 >
                   <EditProductForm
                     product={editingProduct}
@@ -304,35 +259,20 @@ export default function ProductsPage() {
         </Sheet>
       </motion.div>
 
-      {/* =========================
-          Loading
-      ========================== */}
+      {/* LOADING */}
 
       <AnimatePresence mode="wait">
         {loading && (
           <motion.div
             key="loading"
-            initial={{
-              opacity: 0,
-              y: 15,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-              y: -10,
-            }}
-            transition={{
-              duration: 0.3,
-            }}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
             className="rounded-lg border p-8 text-center"
           >
             <motion.div
-              animate={{
-                rotate: 360,
-              }}
+              animate={{ rotate: 360 }}
               transition={{
                 duration: 1,
                 repeat: Infinity,
@@ -350,29 +290,16 @@ export default function ProductsPage() {
         )}
       </AnimatePresence>
 
-      {/* =========================
-          Error
-      ========================== */}
+      {/* ERROR */}
 
       <AnimatePresence mode="wait">
         {!loading && error && (
           <motion.div
             key="error"
-            initial={{
-              opacity: 0,
-              scale: 0.98,
-            }}
-            animate={{
-              opacity: 1,
-              scale: 1,
-            }}
-            exit={{
-              opacity: 0,
-              scale: 0.98,
-            }}
-            transition={{
-              duration: 0.25,
-            }}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.25 }}
             className="rounded-lg border border-destructive/50 p-8 text-center"
           >
             <p className="text-sm text-destructive">{error}</p>
@@ -380,20 +307,12 @@ export default function ProductsPage() {
         )}
       </AnimatePresence>
 
-      {/* =========================
-          Tabla
-      ========================== */}
+      {/* TABLA */}
 
       {!loading && !error && (
         <motion.div
-          initial={{
-            opacity: 0,
-            y: 15,
-          }}
-          animate={{
-            opacity: 1,
-            y: 0,
-          }}
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{
             duration: 0.45,
             delay: 0.1,
@@ -401,9 +320,7 @@ export default function ProductsPage() {
           }}
           className="space-y-4"
         >
-          {/* =========================
-              Buscador
-          ========================== */}
+          {/* BUSCADOR */}
 
           <div className="flex items-center justify-between gap-4">
             <div className="relative w-full max-w-sm">
@@ -425,59 +342,33 @@ export default function ProductsPage() {
             )}
           </div>
 
-          {/* =========================
-              Tabla
-          ========================== */}
+          {/* TABLA */}
 
           <div className="overflow-hidden rounded-lg border">
             <div className="max-h-[60vh] overflow-auto">
               <Table>
-                {/* =========================
-                    Header
-                ========================== */}
-
                 <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                   <TableRow>
                     <TableHead>Producto</TableHead>
-
                     <TableHead>Categoría</TableHead>
-
                     <TableHead className="text-center">
                       Precio de Venta
                     </TableHead>
-
                     <TableHead className="text-center">Stock</TableHead>
-
                     <TableHead className="text-center">Estado</TableHead>
-
                     <TableHead className="text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
-
-                {/* =========================
-                    Body
-                ========================== */}
 
                 <TableBody>
                   <AnimatePresence mode="wait">
                     {products.length === 0 ? (
                       <motion.tr
                         key="empty"
-                        initial={{
-                          opacity: 0,
-                          scale: 0.98,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          scale: 1,
-                        }}
-                        exit={{
-                          opacity: 0,
-                          scale: 0.98,
-                        }}
-                        transition={{
-                          duration: 0.25,
-                        }}
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={{ duration: 0.25 }}
                       >
                         <TableCell
                           colSpan={6}
@@ -489,21 +380,10 @@ export default function ProductsPage() {
                     ) : filteredProducts.length === 0 ? (
                       <motion.tr
                         key="no-results"
-                        initial={{
-                          opacity: 0,
-                          scale: 0.98,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          scale: 1,
-                        }}
-                        exit={{
-                          opacity: 0,
-                          scale: 0.98,
-                        }}
-                        transition={{
-                          duration: 0.25,
-                        }}
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={{ duration: 0.25 }}
                       >
                         <TableCell colSpan={6} className="h-32 text-center">
                           <div className="flex flex-col items-center justify-center gap-2">
@@ -529,14 +409,8 @@ export default function ProductsPage() {
                           <motion.tr
                             key={product.id}
                             layout
-                            initial={{
-                              opacity: 0,
-                              x: -15,
-                            }}
-                            animate={{
-                              opacity: 1,
-                              x: 0,
-                            }}
+                            initial={{ opacity: 0, x: -15 }}
+                            animate={{ opacity: 1, x: 0 }}
                             exit={{
                               opacity: 0,
                               x: 20,
@@ -549,24 +423,16 @@ export default function ProductsPage() {
                             }}
                             className="border-b transition-colors last:border-0 hover:bg-muted/30"
                           >
-                            {/* =========================
-                                  Producto
-                              ========================== */}
+                            {/* PRODUCTO */}
 
                             <TableCell>
                               <div className="font-medium">{product.name}</div>
 
                               {product.barcode && (
                                 <motion.div
-                                  initial={{
-                                    opacity: 0,
-                                  }}
-                                  animate={{
-                                    opacity: 1,
-                                  }}
-                                  transition={{
-                                    duration: 0.25,
-                                  }}
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  transition={{ duration: 0.25 }}
                                   className="text-xs text-muted-foreground"
                                 >
                                   {product.barcode}
@@ -574,55 +440,33 @@ export default function ProductsPage() {
                               )}
                             </TableCell>
 
-                            {/* =========================
-                                  Categoría
-                              ========================== */}
+                            {/* CATEGORÍA */}
 
                             <TableCell className="text-muted-foreground">
                               {product.category?.name ?? "Sin categoría"}
                             </TableCell>
 
-                            {/* =========================
-                                  Precio
-                              ========================== */}
+                            {/* PRECIO */}
 
                             <TableCell className="text-center">
                               <motion.span
-                                initial={{
-                                  opacity: 0,
-                                  y: 5,
-                                }}
-                                animate={{
-                                  opacity: 1,
-                                  y: 0,
-                                }}
-                                transition={{
-                                  duration: 0.25,
-                                }}
+                                initial={{ opacity: 0, y: 5 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25 }}
                               >
                                 ${product.price.toFixed(2)}
                               </motion.span>
                             </TableCell>
 
-                            {/* =========================
-                                  Stock
-                              ========================== */}
+                            {/* STOCK */}
 
                             <TableCell className="text-center">
                               <span className="inline-flex items-center gap-1">
                                 <motion.span
                                   key={product.stock}
-                                  initial={{
-                                    opacity: 0,
-                                    y: 5,
-                                  }}
-                                  animate={{
-                                    opacity: 1,
-                                    y: 0,
-                                  }}
-                                  transition={{
-                                    duration: 0.2,
-                                  }}
+                                  initial={{ opacity: 0, y: 5 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ duration: 0.2 }}
                                 >
                                   {product.stock}
                                 </motion.span>
@@ -633,9 +477,7 @@ export default function ProductsPage() {
                               </span>
                             </TableCell>
 
-                            {/* =========================
-                                  Estado
-                              ========================== */}
+                            {/* ESTADO */}
 
                             <TableCell className="text-center">
                               <AnimatePresence mode="wait">
@@ -653,9 +495,7 @@ export default function ProductsPage() {
                                     opacity: 0,
                                     scale: 0.85,
                                   }}
-                                  transition={{
-                                    duration: 0.2,
-                                  }}
+                                  transition={{ duration: 0.2 }}
                                   className={
                                     product.active
                                       ? "inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400"
@@ -667,21 +507,13 @@ export default function ProductsPage() {
                               </AnimatePresence>
                             </TableCell>
 
-                            {/* =========================
-                                  Acciones
-                              ========================== */}
+                            {/* ACCIONES */}
 
                             <TableCell>
                               <div className="flex justify-center gap-2">
-                                {/* Editar */}
-
                                 <motion.div
-                                  whileHover={{
-                                    scale: 1.04,
-                                  }}
-                                  whileTap={{
-                                    scale: 0.96,
-                                  }}
+                                  whileHover={{ scale: 1.04 }}
+                                  whileTap={{ scale: 0.96 }}
                                 >
                                   <Button
                                     variant="outline"
@@ -693,15 +525,9 @@ export default function ProductsPage() {
                                   </Button>
                                 </motion.div>
 
-                                {/* Activar / Desactivar */}
-
                                 <motion.div
-                                  whileHover={{
-                                    scale: 1.04,
-                                  }}
-                                  whileTap={{
-                                    scale: 0.96,
-                                  }}
+                                  whileHover={{ scale: 1.04 }}
+                                  whileTap={{ scale: 0.96 }}
                                 >
                                   <Button
                                     variant="outline"
@@ -732,9 +558,7 @@ export default function ProductsPage() {
                                             opacity: 0,
                                             scale: 0.8,
                                           }}
-                                          transition={{
-                                            duration: 0.15,
-                                          }}
+                                          transition={{ duration: 0.15 }}
                                           className="flex items-center"
                                         >
                                           <PowerOff className="mr-2 h-4 w-4" />
@@ -755,9 +579,7 @@ export default function ProductsPage() {
                                             opacity: 0,
                                             scale: 0.8,
                                           }}
-                                          transition={{
-                                            duration: 0.15,
-                                          }}
+                                          transition={{ duration: 0.15 }}
                                           className="flex items-center"
                                         >
                                           <Power className="mr-2 h-4 w-4" />
@@ -780,6 +602,9 @@ export default function ProductsPage() {
           </div>
         </motion.div>
       )}
+
+      {/* GRÁFICOS */}
+
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <StockChart products={products} />
 

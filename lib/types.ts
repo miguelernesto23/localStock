@@ -21,3 +21,12 @@ export const UnitType = {
 } as const;
 
 export type UnitType = (typeof UnitType)[keyof typeof UnitType];
+
+import type { Prisma } from "@/generated/prisma/client";
+
+export type ProductWithCategory = Prisma.ProductGetPayload<{
+  include: {
+    category: true;
+    presentations: true;
+  };
+}>;

@@ -23,8 +23,7 @@ import {
 import { updateProduct } from "@/action/product.action";
 import { CategoriesAllAction } from "@/action/category.action";
 
-import { UnitType } from "@/lib/types";
-import type { Product } from "@/generated/prisma/client";
+import { UnitType, type ProductWithCategory } from "@/lib/types";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -52,24 +51,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-type ProductWithCategory = Product & {
-  category: {
-    id: number;
-    name: string;
-  } | null;
-  presentations: {
-    id: number;
-    name: string;
-    factor: number;
-    canPurchase: boolean;
-    canSell: boolean;
-    active: boolean;
-    productId: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }[];
-};
 
 type EditProductFormProps = {
   product: ProductWithCategory;

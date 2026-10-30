@@ -14,7 +14,7 @@ import {
 import { toast } from "sonner";
 
 import { UnitType } from "@/lib/types";
-import type { Product } from "@/generated/prisma/client";
+import type { ProductWithCategory } from "@/lib/types";
 
 import {
   productSchema,
@@ -37,13 +37,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type ProductWithCategory = Product & {
-  category: {
-    id: number;
-    name: string;
-  } | null;
-};
-
 type CreateProductFormProps = {
   onCreated?: (product: ProductWithCategory) => void;
 };
@@ -53,7 +46,6 @@ type CategoryOption = {
   name: string;
   active: boolean;
 };
-
 const unitOptions = [
   {
     value: UnitType.UNIT,
