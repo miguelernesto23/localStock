@@ -410,13 +410,10 @@ export async function getDashboardData() {
   });
 
   // 10. Productos propios con stock bajo.
-  const lowStockProducts = await prisma.product.findMany({
+  const lowStockCandidates = await prisma.product.findMany({
     where: {
       userId,
       active: true,
-      stock: {
-        lte: prisma.product.fields.minStock,
-      },
     },
     select: {
       id: true,
@@ -425,11 +422,12 @@ export async function getDashboardData() {
       minStock: true,
       unit: true,
     },
-    orderBy: {
-      stock: "asc",
-    },
-    take: 10,
   });
+
+  const lowStockProducts = lowStockCandidates
+    .filter((product) => product.stock > 0 && product.stock <= product.minStock)
+    .sort((a, b) => a.stock - b.stock)
+    .slice(0, 10);
 
   // 11. Resultado con la misma estructura del dashboard.
   return {

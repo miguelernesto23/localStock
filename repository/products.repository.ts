@@ -1,16 +1,43 @@
 import prisma from "@/lib/prisma";
+import { UnitType } from "@/generated/prisma/client";
+
+type ProductPresentationInput = {
+  name: string;
+  factor: number;
+  canPurchase: boolean;
+  canSell: boolean;
+  active?: boolean;
+};
+
+type ProductInput = {
+  userId: number;
+  name: string;
+  barcode?: string;
+  description?: string;
+  unit: string;
+  unitType?: UnitType;
+  price: number;
+  costPrice?: number;
+  categoryId?: number;
+  stock?: number;
+  minStock?: number;
+  active?: boolean;
+  presentations: ProductPresentationInput[];
+};
 
 // Obtener todos los productos del usuario
 export async function getProductsRepo(userId: number) {
   return prisma.product.findMany({
-    where: {
-      userId,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
+    where: { userId },
+    orderBy: { createdAt: "desc" },
     include: {
       category: true,
+      presentations: {
+        where: {
+          active: true,
+          canPurchase: true,
+        },
+      },
     },
   });
 }
@@ -24,24 +51,13 @@ export async function getProductByIdRepo(id: number, userId: number) {
     },
     include: {
       category: true,
+      presentations: true,
     },
   });
 }
 
-// Crear producto
-export async function createProductRepo(data: {
-  userId: number;
-  name: string;
-  barcode?: string;
-  description?: string;
-  unit: string;
-  price: number;
-  costPrice?: number;
-  categoryId?: number;
-  stock?: number;
-  minStock?: number;
-  active?: boolean;
-}) {
+// Crear producto junto con sus presentaciones
+export async function createProductRepo(data: ProductInput) {
   return prisma.product.create({
     data: {
       userId: data.userId,
@@ -49,66 +65,70 @@ export async function createProductRepo(data: {
       barcode: data.barcode || null,
       description: data.description,
       unit: data.unit,
+      unitType: data.unitType ?? UnitType.UNIT,
       price: data.price,
       costPrice: data.costPrice ?? 0,
       categoryId: data.categoryId,
       stock: data.stock ?? 0,
       minStock: data.minStock ?? 0,
       active: data.active ?? true,
+
+      presentations: {
+        create: data.presentations,
+      },
     },
     include: {
       category: true,
+      presentations: true,
     },
   });
 }
 
-// Actualizar producto
+// Actualizar producto y reemplazar sus presentaciones
 export async function updateProductRepo(
   id: number,
   userId: number,
-  data: {
-    name: string;
-    barcode?: string;
-    description?: string;
-    unit: string;
-    price: number;
-    costPrice?: number;
-    categoryId?: number;
-    stock?: number;
-    minStock?: number;
-    active?: boolean;
-  },
+  data: Omit<ProductInput, "userId">,
 ) {
-  const product = await prisma.product.findFirst({
-    where: {
-      id,
-      userId,
-    },
-  });
+  return prisma.$transaction(async (tx) => {
+    const product = await tx.product.findFirst({
+      where: {
+        id,
+        userId,
+      },
+    });
 
-  if (!product) {
-    throw new Error("PRODUCT_NOT_FOUND");
-  }
+    if (!product) {
+      throw new Error("PRODUCT_NOT_FOUND");
+    }
 
-  return prisma.product.update({
-    where: {
-      id,
-    },
-    data: {
-      name: data.name,
-      barcode: data.barcode || null,
-      description: data.description,
-      unit: data.unit,
-      price: data.price,
-      costPrice: data.costPrice ?? 0,
-      categoryId: data.categoryId,
-      stock: data.stock,
-      minStock: data.minStock,
-      active: data.active,
-    },
-    include: {
-      category: true,
-    },
+    return tx.product.update({
+      where: {
+        id,
+      },
+      data: {
+        name: data.name,
+        barcode: data.barcode || null,
+        description: data.description,
+        unit: data.unit,
+        unitType: data.unitType ?? product.unitType,
+        price: data.price,
+        costPrice: data.costPrice ?? 0,
+        categoryId: data.categoryId,
+        stock: data.stock,
+        minStock: data.minStock,
+        active: data.active,
+
+        presentations: {
+          deleteMany: {},
+          create: data.presentations,
+        },
+      },
+      include: {
+        category: true,
+        presentations: true,
+      },
+    });
   });
 }
 
@@ -126,9 +146,7 @@ export async function deleteProductRepo(id: number, userId: number) {
   }
 
   await prisma.product.delete({
-    where: {
-      id,
-    },
+    where: { id },
   });
 
   return id;
@@ -161,12 +179,17 @@ export async function toggleProductActiveRepo(
     },
     include: {
       category: true,
+      presentations: true,
     },
   });
 }
+
+// Obtener los 5 productos más vendidos del usuario
 export async function getBestSellingProductsRepo(userId: number) {
   const products = await prisma.product.findMany({
-    where: { userId },
+    where: {
+      userId,
+    },
     select: {
       id: true,
       name: true,
@@ -187,4 +210,51 @@ export async function getBestSellingProductsRepo(userId: number) {
     .filter((product) => product.sold > 0)
     .sort((a, b) => b.sold - a.sold)
     .slice(0, 5);
+}
+// Obtener productos con lotes disponibles para registrar ventas
+export async function getProductsWithLotsForSaleRepo(userId: number) {
+  return prisma.product.findMany({
+    where: {
+      userId,
+      active: true,
+      stock: {
+        gt: 0,
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+      barcode: true,
+      price: true,
+      stock: true,
+      unit: true,
+      unitType: true,
+
+      lots: {
+        where: {
+          availableQuantity: {
+            gt: 0,
+          },
+        },
+        orderBy: [
+          {
+            purchaseDate: "asc",
+          },
+          {
+            id: "asc",
+          },
+        ],
+        select: {
+          id: true,
+          lotCode: true,
+          purchaseDate: true,
+          availableQuantity: true,
+          unitCost: true,
+        },
+      },
+    },
+    orderBy: {
+      name: "asc",
+    },
+  });
 }

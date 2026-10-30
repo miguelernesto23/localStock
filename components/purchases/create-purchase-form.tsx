@@ -9,6 +9,7 @@ import {
   Wallet,
   AlertTriangle,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { createPurchase } from "@/action/purchase.action";
 import { getProducts } from "@/action/product.action";
@@ -40,7 +41,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 
-import { cn } from "@/lib/utils";
+import { cn, generateLotPrefix } from "@/lib/utils";
 
 import {
   purchaseSchema,
@@ -49,24 +50,44 @@ import {
 
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { generateLotPrefix } from "../../lib/utils";
+
+// --------------------------------------------------
+// TIPOS
+// --------------------------------------------------
+
 type PurchaseProduct = {
   id: number;
   name: string;
+  unit: string;
   costPrice: number;
   active: boolean;
+
   category?: {
     id: number;
     name: string;
   } | null;
+
+  presentations: {
+    id: number;
+    name: string;
+    factor: number;
+    canPurchase: boolean;
+    active: boolean;
+  }[];
 };
 
 type PurchaseItemState = {
   lineId: string;
   productId: number;
   productName: string;
-  quantity: number;
-  unitCost: number;
+  baseUnit: string;
+  presentationId: number;
+  presentationName: string;
+  presentationFactor: number;
+  purchasedQuantity: number;
+  purchasedUnitCost: number;
+  baseQuantity: number;
+  baseUnitCost: number;
   lotCode: string;
   purchaseDate: string;
 };
@@ -82,6 +103,10 @@ type CreatePurchaseFormProps = {
   onCreated?: () => void;
 };
 
+// --------------------------------------------------
+// UTILIDADES
+// --------------------------------------------------
+
 function getTodayDate() {
   const now = new Date();
   const year = now.getFullYear();
@@ -90,6 +115,17 @@ function getTodayDate() {
 
   return `${year}-${month}-${day}`;
 }
+
+function formatMoney(value: number) {
+  return value.toLocaleString("es-CU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// --------------------------------------------------
+// COMPONENTE
+// --------------------------------------------------
 
 export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
   const [products, setProducts] = useState<PurchaseProduct[]>([]);
@@ -102,16 +138,24 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
     null,
   );
 
+  const [selectedPresentationId, setSelectedPresentationId] = useState<
+    number | null
+  >(null);
+
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [lotCode, setLotCode] = useState("");
-  const [purchaseDate, setPurchaseDate] = useState(getTodayDate());
+  const [purchaseDate, setPurchaseDate] = useState("");
 
   const [items, setItems] = useState<PurchaseItemState[]>([]);
 
   const [serverError, setServerError] = useState("");
   const [openProducts, setOpenProducts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // --------------------------------------------------
+  // REACT HOOK FORM
+  // --------------------------------------------------
 
   const form = useForm<PurchaseFormData>({
     resolver: zodResolver(purchaseSchema),
@@ -137,10 +181,13 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
     name: "paymentType",
   });
 
-  /*
-   * Cargar productos y caja activa.
-   */
+  // --------------------------------------------------
+  // CARGAR PRODUCTOS Y CAJA
+  // --------------------------------------------------
+
   useEffect(() => {
+    let cancelled = false;
+
     async function loadData() {
       try {
         setLoadingProducts(true);
@@ -151,8 +198,11 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
           getActiveCashBox(),
         ]);
 
+        if (cancelled) return;
+
         if (!productsResult.success) {
           setServerError(productsResult.error);
+          toast.error(productsResult.error);
         } else {
           setProducts(
             productsResult.products.filter((product) => product.active),
@@ -161,40 +211,96 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
 
         if (!cashBoxResult.success) {
           setServerError(cashBoxResult.error);
+          toast.error(cashBoxResult.error);
         } else {
           setCashBox(cashBoxResult.cashBox);
         }
       } catch (error) {
+        if (cancelled) return;
+
         console.error("Error cargando datos:", error);
-        setServerError("No se pudieron cargar los datos de la compra.");
+
+        const message = "No se pudieron cargar los datos de la compra.";
+
+        setServerError(message);
+        toast.error(message);
       } finally {
-        setLoadingProducts(false);
-        setLoadingCashBox(false);
+        if (!cancelled) {
+          setLoadingProducts(false);
+          setLoadingCashBox(false);
+        }
       }
     }
 
     loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  /*
-   * Producto seleccionado.
-   */
+  // --------------------------------------------------
+  // PRODUCTO SELECCIONADO
+  // --------------------------------------------------
+
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === selectedProductId),
     [products, selectedProductId],
   );
 
-  /*
-   * Total de la compra.
-   */
+  // --------------------------------------------------
+  // PRESENTACIÓN SELECCIONADA
+  // --------------------------------------------------
+
+  const selectedPresentation = useMemo(
+    () =>
+      selectedProduct?.presentations.find(
+        (presentation) => presentation.id === selectedPresentationId,
+      ),
+    [selectedProduct, selectedPresentationId],
+  );
+
+  // --------------------------------------------------
+  // CÁLCULOS DE LA PRESENTACIÓN
+  // --------------------------------------------------
+
+  const parsedQuantity = Number(quantity);
+  const parsedUnitCost = Number(unitCost);
+
+  const previewBaseQuantity =
+    selectedPresentation && Number.isFinite(parsedQuantity)
+      ? parsedQuantity * selectedPresentation.factor
+      : 0;
+
+  const previewBaseUnitCost =
+    selectedPresentation &&
+    selectedPresentation.factor > 0 &&
+    Number.isFinite(parsedUnitCost)
+      ? parsedUnitCost / selectedPresentation.factor
+      : 0;
+
+  const previewSubtotal =
+    Number.isFinite(parsedQuantity) && Number.isFinite(parsedUnitCost)
+      ? parsedQuantity * parsedUnitCost
+      : 0;
+
+  // --------------------------------------------------
+  // TOTAL DE LA COMPRA
+  // --------------------------------------------------
+
   const total = useMemo(
-    () => items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0),
+    () =>
+      items.reduce(
+        (sum, item) => sum + item.purchasedQuantity * item.purchasedUnitCost,
+        0,
+      ),
     [items],
   );
 
-  /*
-   * Capital restante después de la compra.
-   */
+  // --------------------------------------------------
+  // CAPITAL RESTANTE
+  // --------------------------------------------------
+
   const remainingCapital = useMemo(() => {
     if (!cashBox) return 0;
 
@@ -210,94 +316,178 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
     cashBox !== null &&
     total > cashBox.currentBalance;
 
-  /*
-   * Sincronizar líneas con React Hook Form.
-   */
+  // --------------------------------------------------
+  // SINCRONIZAR CON REACT HOOK FORM
+  // --------------------------------------------------
+
   function syncItems(updatedItems: PurchaseItemState[]) {
     setItems(updatedItems);
 
-    setValue(
-      "items",
-      updatedItems.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        unitCost: item.unitCost,
-        lotCode: item.lotCode,
-        purchaseDate: item.purchaseDate,
-      })),
-      {
-        shouldValidate: true,
-        shouldDirty: true,
-      },
-    );
+    const formItems: PurchaseFormData["items"] = updatedItems.map((item) => ({
+      productId: item.productId,
+      presentationId: item.presentationId,
+      purchasedQuantity: item.purchasedQuantity,
+      purchasedUnitCost: item.purchasedUnitCost,
+      lotCode: item.lotCode,
+      purchaseDate: item.purchaseDate,
+    }));
+
+    setValue("items", formItems, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
   }
 
-  /*
-   * Seleccionar producto de referencia.
-   */
-  function handleSelectProduct(product: PurchaseProduct) {
-    const prefix = generateLotPrefix(product.name);
+  // --------------------------------------------------
+  // GENERAR CÓDIGO DE LOTE
+  // --------------------------------------------------
+
+  function generateItemLotCode(productName: string) {
+    const prefix = generateLotPrefix(productName);
 
     const nextNumber =
       items.filter((item) => item.lotCode.startsWith(`${prefix}-`)).length + 1;
 
-    const generatedCode = `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+    return `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+  }
+
+  // --------------------------------------------------
+  // SELECCIONAR PRODUCTO
+  // --------------------------------------------------
+
+  function handleSelectProduct(product: PurchaseProduct) {
+    const availablePresentations = product.presentations.filter(
+      (presentation) => presentation.active && presentation.canPurchase,
+    );
 
     setSelectedProductId(product.id);
-    setUnitCost(String(product.costPrice));
+
+    if (availablePresentations.length === 0) {
+      setSelectedPresentationId(null);
+      setUnitCost("");
+    } else {
+      const firstPresentation = availablePresentations[0];
+
+      setSelectedPresentationId(firstPresentation.id);
+      setUnitCost(String(product.costPrice * firstPresentation.factor));
+    }
+
     setQuantity("");
-    setLotCode(generatedCode);
+    setLotCode(generateItemLotCode(product.name));
     setPurchaseDate(getTodayDate());
     setOpenProducts(false);
     setServerError("");
   }
 
-  /*
-   * Añadir una línea de compra.
-   * Cada línea representa un lote independiente.
-   */
+  // --------------------------------------------------
+  // CAMBIAR PRESENTACIÓN
+  // --------------------------------------------------
+
+  function handleSelectPresentation(value: string) {
+    if (!selectedProduct) return;
+
+    const presentationId = Number(value);
+
+    const presentation = selectedProduct.presentations.find(
+      (item) => item.id === presentationId,
+    );
+
+    if (!presentation) return;
+
+    setSelectedPresentationId(presentation.id);
+
+    setUnitCost(String(selectedProduct.costPrice * presentation.factor));
+  }
+
+  // --------------------------------------------------
+  // AÑADIR LOTE
+  // --------------------------------------------------
+
   function handleAddItem() {
     setServerError("");
 
     if (!selectedProduct) {
-      setServerError("Selecciona un producto.");
+      const message = "Selecciona un producto.";
+      setServerError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (!selectedPresentation) {
+      const message = "Selecciona una presentación válida para este producto.";
+      setServerError(message);
+      toast.error(message);
       return;
     }
 
     const parsedQuantity = Number(quantity);
     const parsedUnitCost = Number(unitCost);
 
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
-      setServerError("La cantidad debe ser un número entero mayor que 0.");
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+      const message = "La cantidad debe ser mayor que 0.";
+      setServerError(message);
+      toast.error(message);
       return;
     }
 
     if (!Number.isFinite(parsedUnitCost) || parsedUnitCost < 0) {
-      setServerError("El costo unitario no puede ser negativo.");
+      const message = "El costo por presentación no puede ser negativo.";
+      setServerError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (
+      !Number.isFinite(selectedPresentation.factor) ||
+      selectedPresentation.factor <= 0
+    ) {
+      const message =
+        "El factor de conversión de esta presentación no es válido.";
+
+      setServerError(message);
+      toast.error(message);
       return;
     }
 
     if (!purchaseDate) {
-      setServerError("Selecciona la fecha de compra del lote.");
+      const message = "Selecciona la fecha de compra del lote.";
+      setServerError(message);
+      toast.error(message);
       return;
     }
 
-    const prefix = generateLotPrefix(selectedProduct.name);
+    const baseQuantity = parsedQuantity * selectedPresentation.factor;
+    const baseUnitCost = parsedUnitCost / selectedPresentation.factor;
 
-    const nextNumber =
-      items.filter((item) => item.lotCode.startsWith(`${prefix}-`)).length + 1;
+    if (!Number.isFinite(baseQuantity) || !Number.isFinite(baseUnitCost)) {
+      const message = "No se pudieron calcular las unidades del lote.";
+      setServerError(message);
+      toast.error(message);
+      return;
+    }
 
     const generatedLotCode =
-      lotCode.trim() || `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+      lotCode.trim() || generateItemLotCode(selectedProduct.name);
 
     const updatedItems: PurchaseItemState[] = [
       ...items,
       {
         lineId: crypto.randomUUID(),
+
         productId: selectedProduct.id,
         productName: selectedProduct.name,
-        quantity: parsedQuantity,
-        unitCost: parsedUnitCost,
+        baseUnit: selectedProduct.unit,
+
+        presentationId: selectedPresentation.id,
+        presentationName: selectedPresentation.name,
+        presentationFactor: selectedPresentation.factor,
+
+        purchasedQuantity: parsedQuantity,
+        purchasedUnitCost: parsedUnitCost,
+
+        baseQuantity,
+        baseUnitCost,
+
         lotCode: generatedLotCode,
         purchaseDate,
       },
@@ -306,30 +496,38 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
     syncItems(updatedItems);
 
     setSelectedProductId(null);
+    setSelectedPresentationId(null);
     setQuantity("");
     setUnitCost("");
     setLotCode("");
-    setPurchaseDate(getTodayDate());
-    setOpenProducts(false);
+    setPurchaseDate("");
+
+    toast.success("Lote agregado correctamente.");
   }
 
-  /*
-   * Eliminar una línea concreta.
-   */
+  // --------------------------------------------------
+  // ELIMINAR LOTE
+  // --------------------------------------------------
+
   function handleRemoveItem(lineId: string) {
     setServerError("");
 
     syncItems(items.filter((item) => item.lineId !== lineId));
+
+    toast.success("Lote eliminado.");
   }
 
-  /*
-   * Registrar compra.
-   */
+  // --------------------------------------------------
+  // REGISTRAR COMPRA
+  // --------------------------------------------------
+
   async function onSubmit(data: PurchaseFormData) {
     setServerError("");
 
     if (items.length === 0) {
-      setServerError("La compra debe tener al menos un producto.");
+      const message = "La compra debe tener al menos un producto.";
+      setServerError(message);
+      toast.error(message);
       return;
     }
 
@@ -338,19 +536,25 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
       cashBox &&
       total > cashBox.currentBalance
     ) {
-      setServerError(
-        "El saldo de la caja no es suficiente para realizar esta compra.",
-      );
+      const message =
+        "El saldo de la caja no es suficiente para realizar esta compra.";
+
+      setServerError(message);
+      toast.error(message);
       return;
     }
 
     setSubmitting(true);
 
+    const registeredTotal = total;
+    const currency = cashBox?.currency ?? "CUP";
+
     try {
       const purchaseItems = items.map((item) => ({
         productId: item.productId,
-        quantity: item.quantity,
-        unitCost: item.unitCost,
+        presentationId: item.presentationId,
+        purchasedQuantity: item.purchasedQuantity,
+        purchasedUnitCost: item.purchasedUnitCost,
         lotCode: item.lotCode || undefined,
         purchaseDate: item.purchaseDate || undefined,
       }));
@@ -359,38 +563,66 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
         supplierName: data.supplierName || undefined,
         paymentType: data.paymentType || undefined,
         notes: data.notes || undefined,
-        total,
         items: purchaseItems,
       });
 
       if (!result.success) {
         setServerError(result.error);
+        toast.error(result.error);
         return;
       }
 
+      toast.success("¡Compra registrada correctamente!", {
+        description: `Total: ${formatMoney(registeredTotal)} ${currency}`,
+      });
+
+      // Limpiar formulario después del registro exitoso.
       reset();
       setItems([]);
+
       setSelectedProductId(null);
+      setSelectedPresentationId(null);
+
       setQuantity("");
       setUnitCost("");
       setLotCode("");
-      setPurchaseDate(getTodayDate());
+      setPurchaseDate("");
       setServerError("");
 
-      const cashBoxResult = await getActiveCashBox();
+      // Actualizar la caja sin convertir un fallo de actualización
+      // en un falso error de registro de compra.
+      try {
+        const cashBoxResult = await getActiveCashBox();
 
-      if (cashBoxResult.success) {
-        setCashBox(cashBoxResult.cashBox);
+        if (cashBoxResult.success) {
+          setCashBox(cashBoxResult.cashBox);
+        } else {
+          console.error("No se pudo actualizar la caja:", cashBoxResult.error);
+        }
+      } catch (error) {
+        console.error("Error actualizando la caja:", error);
       }
 
-      onCreated?.();
+      try {
+        onCreated?.();
+      } catch (error) {
+        console.error("Error ejecutando onCreated:", error);
+      }
     } catch (error) {
       console.error("Error creando compra:", error);
-      setServerError("Ocurrió un error al registrar la compra.");
+
+      const message = "Ocurrió un error al registrar la compra.";
+
+      setServerError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
   }
+
+  // --------------------------------------------------
+  // INTERFAZ
+  // --------------------------------------------------
 
   return (
     <form
@@ -398,6 +630,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
       className="overflow-hidden rounded-xl border bg-card shadow-sm"
     >
       {/* CABECERA */}
+
       <div className="border-b px-6 py-5">
         <h2 className="text-lg font-semibold">Registrar compra</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -407,8 +640,10 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
 
       <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
         {/* COLUMNA IZQUIERDA */}
+
         <div className="border-b p-6 lg:border-b-0 lg:border-r">
           {/* DATOS GENERALES */}
+
           <section>
             <div className="mb-5">
               <h3 className="font-semibold">Datos de la compra</h3>
@@ -422,11 +657,13 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 <label htmlFor="supplierName" className="text-sm font-medium">
                   Proveedor
                 </label>
+
                 <Input
                   id="supplierName"
                   placeholder="Nombre del proveedor"
                   {...register("supplierName")}
                 />
+
                 {errors.supplierName && (
                   <p className="text-xs text-destructive">
                     {errors.supplierName.message}
@@ -436,28 +673,33 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Tipo de pago</label>
+
                 <Select
                   value={paymentType || ""}
                   onValueChange={(value) => {
-                    form.setValue(
-                      "paymentType",
-                      value as "EFECTIVO" | "TRANSFERENCIA" | "CREDITO",
-                      {
+                    if (
+                      value === "EFECTIVO" ||
+                      value === "TRANSFERENCIA" ||
+                      value === "CREDITO"
+                    ) {
+                      form.setValue("paymentType", value, {
                         shouldValidate: true,
                         shouldDirty: true,
-                      },
-                    );
+                      });
+                    }
                   }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona un tipo de pago" />
                   </SelectTrigger>
+
                   <SelectContent>
                     <SelectItem value="EFECTIVO">Efectivo</SelectItem>
                     <SelectItem value="TRANSFERENCIA">Transferencia</SelectItem>
                     <SelectItem value="CREDITO">Crédito</SelectItem>
                   </SelectContent>
                 </Select>
+
                 {errors.paymentType && (
                   <p className="text-xs text-destructive">
                     {errors.paymentType.message}
@@ -469,6 +711,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 <label htmlFor="notes" className="text-sm font-medium">
                   Notas
                 </label>
+
                 <textarea
                   id="notes"
                   rows={4}
@@ -482,6 +725,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                     "focus-visible:ring-ring",
                   )}
                 />
+
                 {errors.notes && (
                   <p className="text-xs text-destructive">
                     {errors.notes.message}
@@ -494,16 +738,18 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
           <div className="my-7 border-t" />
 
           {/* AGREGAR LOTE */}
+
           <section>
             <div className="mb-5">
               <h3 className="font-semibold">Agregar lote</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Selecciona el producto y registra los datos de esta partida.
+                Selecciona el producto y registra su presentación de compra.
               </p>
             </div>
 
             <div className="space-y-5">
               {/* PRODUCTO */}
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">Producto</label>
 
@@ -526,16 +772,18 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                           ? selectedProduct.name
                           : "Buscar producto..."}
                       </span>
+
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
 
                   <PopoverContent
-                    className="w-(--radix-popover-trigFger-width) p-0"
+                    className="w-[--radix-popover-trigger-width] p-0"
                     align="start"
                   >
                     <Command>
                       <CommandInput placeholder="Buscar producto..." />
+
                       <CommandList>
                         {loadingProducts ? (
                           <CommandEmpty>Cargando productos...</CommandEmpty>
@@ -546,6 +794,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                             <CommandEmpty>
                               No se encontró ningún producto.
                             </CommandEmpty>
+
                             <CommandGroup>
                               {products.map((product) => (
                                 <CommandItem
@@ -561,11 +810,12 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                                         : "opacity-0",
                                     )}
                                   />
+
                                   <div className="min-w-0 flex-1">
                                     <p className="truncate">{product.name}</p>
+
                                     <p className="text-xs text-muted-foreground">
-                                      Costo de referencia:{" "}
-                                      {product.costPrice.toFixed(2)}
+                                      Unidad base: {product.unit}
                                     </p>
                                   </div>
                                 </CommandItem>
@@ -579,12 +829,60 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 </Popover>
               </div>
 
+              {/* PRESENTACIÓN */}
+
+              {selectedProduct && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Presentación de compra
+                  </label>
+
+                  {selectedProduct.presentations.filter(
+                    (presentation) =>
+                      presentation.active && presentation.canPurchase,
+                  ).length === 0 ? (
+                    <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                      Este producto no tiene presentaciones configuradas. Debes
+                      crear una presentación para poder comprarlo.
+                    </p>
+                  ) : (
+                    <Select
+                      value={selectedPresentationId?.toString() ?? ""}
+                      onValueChange={handleSelectPresentation}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona una presentación" />
+                      </SelectTrigger>
+
+                      <SelectContent>
+                        {selectedProduct.presentations
+                          .filter(
+                            (presentation) =>
+                              presentation.active && presentation.canPurchase,
+                          )
+                          .map((presentation) => (
+                            <SelectItem
+                              key={presentation.id}
+                              value={presentation.id.toString()}
+                            >
+                              {presentation.name} ({presentation.factor}{" "}
+                              {selectedProduct.unit})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+
               {/* DATOS DEL LOTE */}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <label htmlFor="lotCode" className="text-sm font-medium">
                     Código del lote
                   </label>
+
                   <Input
                     id="lotCode"
                     placeholder="Ej. ACE-001"
@@ -592,6 +890,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                     onChange={(event) => setLotCode(event.target.value)}
                     maxLength={100}
                   />
+
                   <p className="text-xs text-muted-foreground">
                     Opcional; se genera uno si lo dejas vacío.
                   </p>
@@ -601,6 +900,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                   <label htmlFor="purchaseDate" className="text-sm font-medium">
                     Fecha de compra
                   </label>
+
                   <Input
                     id="purchaseDate"
                     type="date"
@@ -610,27 +910,31 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 </div>
               </div>
 
-              {/* CANTIDAD Y COSTO */}
+              {/* CANTIDAD Y PRECIO */}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <label htmlFor="quantity" className="text-sm font-medium">
-                    Cantidad
+                    Cantidad comprada
                   </label>
+
                   <Input
                     id="quantity"
                     type="number"
-                    min="1"
-                    step="1"
+                    min="0.01"
+                    step="any"
                     placeholder="0"
                     value={quantity}
                     onChange={(event) => setQuantity(event.target.value)}
+                    disabled={!selectedPresentation}
                   />
                 </div>
 
                 <div className="space-y-2">
                   <label htmlFor="unitCost" className="text-sm font-medium">
-                    Costo unitario
+                    Precio por presentación
                   </label>
+
                   <Input
                     id="unitCost"
                     type="number"
@@ -639,15 +943,55 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                     placeholder="0.00"
                     value={unitCost}
                     onChange={(event) => setUnitCost(event.target.value)}
+                    disabled={!selectedPresentation}
                   />
                 </div>
               </div>
+
+              {/* VISTA PREVIA */}
+
+              {selectedPresentation && (
+                <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm font-medium">Resumen de conversión</p>
+
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="text-muted-foreground">
+                      Unidades que entrarán
+                    </span>
+
+                    <span className="font-semibold tabular-nums">
+                      {formatMoney(previewBaseQuantity)} {selectedProduct?.unit}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="text-muted-foreground">
+                      Costo por {selectedProduct?.unit}
+                    </span>
+
+                    <span className="font-semibold tabular-nums">
+                      {formatMoney(previewBaseUnitCost)}
+                    </span>
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-sm font-medium">Subtotal</span>
+
+                      <span className="font-bold tabular-nums">
+                        {formatMoney(previewSubtotal)}{" "}
+                        {cashBox?.currency ?? "CUP"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <Button
                 type="button"
                 className="w-full"
                 onClick={handleAddItem}
-                disabled={!selectedProduct}
+                disabled={!selectedProduct || !selectedPresentation}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Agregar lote
@@ -656,6 +1000,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
           </section>
 
           {/* ERROR */}
+
           {serverError && (
             <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {serverError}
@@ -663,6 +1008,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
           )}
 
           {/* REGISTRAR */}
+
           <Button
             type="submit"
             size="lg"
@@ -679,6 +1025,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
         </div>
 
         {/* COLUMNA DERECHA */}
+
         <div className="min-w-0 p-6">
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
@@ -687,6 +1034,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 Cada línea representa un lote independiente.
               </p>
             </div>
+
             <div className="rounded-md bg-muted px-3 py-2 text-right">
               <p className="text-xs text-muted-foreground">Lotes</p>
               <p className="font-semibold">{items.length}</p>
@@ -699,7 +1047,9 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                   <Plus className="h-5 w-5 text-muted-foreground" />
                 </div>
+
                 <p className="font-medium">No hay lotes agregados</p>
+
                 <p className="mt-1 text-sm text-muted-foreground">
                   Los lotes que agregues aparecerán aquí.
                 </p>
@@ -707,48 +1057,75 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
             </div>
           ) : (
             <div className="space-y-5">
+              {/* TABLA DE LOTES */}
+
               <div className="overflow-hidden rounded-lg border">
                 <div className="max-h-[520px] overflow-auto">
-                  <table className="w-full min-w-[850px] text-sm">
+                  <table className="w-full min-w-[1050px] text-sm">
                     <thead className="sticky top-0 z-10 bg-muted">
                       <tr className="border-b">
                         <th className="px-4 py-3 text-left font-medium">
                           Producto / lote
                         </th>
+
+                        <th className="px-4 py-3 text-left font-medium">
+                          Presentación
+                        </th>
+
                         <th className="px-4 py-3 text-left font-medium">
                           Fecha
                         </th>
+
                         <th className="px-4 py-3 text-right font-medium">
-                          Cantidad
+                          Comprado
                         </th>
+
                         <th className="px-4 py-3 text-right font-medium">
-                          Costo unit.
+                          Recibido
                         </th>
+
+                        <th className="px-4 py-3 text-right font-medium">
+                          Costo base
+                        </th>
+
                         <th className="px-4 py-3 text-right font-medium">
                           Subtotal
                         </th>
+
                         <th className="w-12 px-4 py-3" />
                       </tr>
                     </thead>
 
                     <tbody>
                       {items.map((item) => {
-                        const subtotal = item.quantity * item.unitCost;
+                        const subtotal =
+                          item.purchasedQuantity * item.purchasedUnitCost;
 
                         return (
                           <tr
                             key={item.lineId}
                             className="border-b last:border-0 hover:bg-muted/40"
                           >
-                            <td className="max-w-[260px] px-4 py-3">
+                            <td className="max-w-[200px] px-4 py-3">
                               <p
                                 className="truncate font-medium"
                                 title={item.productName}
                               >
                                 {item.productName}
                               </p>
+
                               <p className="text-xs text-muted-foreground">
-                                Lote: {item.lotCode || "Código automático"}
+                                Lote: {item.lotCode}
+                              </p>
+                            </td>
+
+                            <td className="px-4 py-3">
+                              <p className="font-medium">
+                                {item.presentationName}
+                              </p>
+
+                              <p className="text-xs text-muted-foreground">
+                                × {item.presentationFactor}
                               </p>
                             </td>
 
@@ -756,16 +1133,26 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                               {item.purchaseDate}
                             </td>
 
-                            <td className="px-4 py-3 text-right tabular-nums">
-                              {item.quantity}
+                            <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                              {formatMoney(item.purchasedQuantity)}
                             </td>
 
                             <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                              {item.unitCost.toFixed(2)}
+                              <p className="font-medium">
+                                {formatMoney(item.baseQuantity)}
+                              </p>
+
+                              <p className="text-xs text-muted-foreground">
+                                {item.baseUnit}
+                              </p>
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                              {formatMoney(item.baseUnitCost)}
                             </td>
 
                             <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">
-                              {subtotal.toFixed(2)}
+                              {formatMoney(subtotal)}
                             </td>
 
                             <td className="px-4 py-3 text-center">
@@ -789,25 +1176,25 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
               </div>
 
               {/* TOTAL */}
+
               <div className="flex items-center justify-between border-t pt-5">
                 <div>
                   <p className="text-sm text-muted-foreground">
                     Total de la compra
                   </p>
+
                   <p className="text-xs text-muted-foreground">
                     {items.length} {items.length === 1 ? "lote" : "lotes"}
                   </p>
                 </div>
+
                 <p className="text-3xl font-bold tracking-tight">
-                  {total.toLocaleString("es-CU", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  {cashBox?.currency ?? "CUP"}
+                  {formatMoney(total)} {cashBox?.currency ?? "CUP"}
                 </p>
               </div>
 
               {/* RESUMEN DE CAPITAL */}
+
               {cashBox && (
                 <div
                   className={cn(
@@ -824,12 +1211,14 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                           ? "Compra a crédito"
                           : "Saldo después de la compra"}
                       </p>
+
                       <p className="mt-1 text-xs text-muted-foreground">
                         {paymentType === "CREDITO"
                           ? "El capital no se modifica."
                           : "Saldo estimado al confirmar."}
                       </p>
                     </div>
+
                     <p
                       className={cn(
                         "text-xl font-bold tabular-nums",
@@ -838,11 +1227,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                           : "text-primary",
                       )}
                     >
-                      {remainingCapital.toLocaleString("es-CU", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      {cashBox.currency}
+                      {formatMoney(remainingCapital)} {cashBox.currency}
                     </p>
                   </div>
                 </div>
@@ -851,6 +1236,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
           )}
 
           {/* CAPITAL DISPONIBLE */}
+
           <div className="mt-2 rounded-lg border bg-muted/30 p-4">
             <div className="flex items-center gap-2">
               <Wallet className="h-4 w-4 text-primary" />
@@ -866,6 +1252,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 <p className="text-sm text-destructive">
                   No tienes una caja activa.
                 </p>
+
                 <p className="mt-1 text-xs text-muted-foreground">
                   Crea una caja antes de realizar compras pagadas.
                 </p>
@@ -876,12 +1263,9 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                   <span className="text-xs text-muted-foreground">
                     Disponible
                   </span>
+
                   <span className="font-semibold tabular-nums">
-                    {cashBox.currentBalance.toLocaleString("es-CU", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    {cashBox.currency}
+                    {formatMoney(cashBox.currentBalance)} {cashBox.currency}
                   </span>
                 </div>
 
@@ -889,12 +1273,9 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                   <span className="text-xs text-muted-foreground">
                     Total compra
                   </span>
+
                   <span className="font-medium tabular-nums">
-                    {total.toLocaleString("es-CU", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    {cashBox.currency}
+                    {formatMoney(total)} {cashBox.currency}
                   </span>
                 </div>
 
@@ -902,17 +1283,14 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
 
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium">Capital restante</span>
+
                   <span
                     className={cn(
                       "font-bold tabular-nums",
                       insufficientBalance ? "text-destructive" : "text-primary",
                     )}
                   >
-                    {remainingCapital.toLocaleString("es-CU", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    {cashBox.currency}
+                    {formatMoney(remainingCapital)} {cashBox.currency}
                   </span>
                 </div>
 
@@ -925,6 +1303,7 @@ export function CreatePurchaseForm({ onCreated }: CreatePurchaseFormProps) {
                 {insufficientBalance && (
                   <div className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+
                     <span>
                       El saldo disponible no es suficiente para esta compra.
                     </span>

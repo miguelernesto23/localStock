@@ -11,10 +11,9 @@ import {
   deleteProductRepo,
   toggleProductActiveRepo,
   getBestSellingProductsRepo,
+  getProductsWithLotsForSaleRepo,
 } from "@/repository/products.repository";
-
 import { productSchema, type ProductFormData } from "@/schema/product.schema";
-
 import { verifySession } from "@/lib/auth/session";
 
 // ─────────────────────────────────────────────
@@ -301,6 +300,33 @@ export async function getBestSellingProducts() {
     return {
       success: false as const,
       error: "No se pudieron obtener los productos más vendidos.",
+    };
+  }
+}
+// Obtener productos con lotes disponibles para ventas
+export async function getProductsForSale() {
+  try {
+    const userId = await getAuthenticatedUserId();
+
+    if (!userId) {
+      return {
+        success: false as const,
+        error: "No estás autenticado.",
+      };
+    }
+
+    const products = await getProductsWithLotsForSaleRepo(userId);
+
+    return {
+      success: true as const,
+      products,
+    };
+  } catch (error) {
+    console.error("Error obteniendo productos para ventas:", error);
+
+    return {
+      success: false as const,
+      error: "No se pudieron cargar los productos para ventas.",
     };
   }
 }

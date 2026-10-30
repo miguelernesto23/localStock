@@ -14,3 +14,10 @@ export type CreateProductInput = {
 export type UpdateProductInput = {
   id: number;
 } & Partial<CreateProductInput>;
+export const UnitType = {
+  UNIT: "UNIT",
+  GRAM: "GRAM",
+  MILLILITER: "MILLILITER",
+} as const;
+
+export type UnitType = (typeof UnitType)[keyof typeof UnitType];

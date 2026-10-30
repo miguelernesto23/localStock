@@ -2,27 +2,32 @@
 
 Sistema web de gestión de inventario y ventas desarrollado para pequeños negocios.
 
-LocalStock permite administrar productos, categorías, compras, ventas, movimientos de inventario, caja y deudas desde una interfaz web moderna y sencilla.
+LocalStock permite administrar productos, categorías, compras, ventas, movimientos de inventario, caja y deudas desde una interfaz web moderna, intuitiva y adaptable.
+
+El sistema está diseñado para centralizar las operaciones principales de un negocio, facilitando el control de existencias, el seguimiento de las operaciones comerciales y la gestión financiera.
 
 ---
 
 ## 🚀 Características
 
-* 📦 Gestión de productos
-* 🏷️ Gestión de categorías
-* 📊 Control de inventario
-* 🛒 Registro de compras
-* 💰 Registro de ventas
-* 💵 Gestión de caja
-* 📒 Gestión de deudas
-* 📈 Métricas y estadísticas
-* 🧾 Registro de movimientos
-* 🔐 Autenticación de usuarios
-* 👤 Roles de usuario y administrador
-* 🔎 Búsqueda y filtrado de información
-* 📄 Paginación de registros
-* 🔔 Notificaciones mediante Toast
-* 📱 Interfaz adaptable a diferentes tamaños de pantalla
+- 📦 Gestión de productos.
+- 🏷️ Gestión de categorías.
+- 📊 Control de inventario.
+- 🛒 Registro y gestión de compras.
+- 💰 Registro y gestión de ventas.
+- 🧾 Control de inventario mediante movimientos.
+- 🗃️ Gestión de inventario por lotes.
+- 🔄 Asignación manual de lotes en las ventas.
+- 📈 Cálculo de costos y ganancias según los lotes utilizados.
+- 💵 Gestión de caja.
+- 📒 Gestión de deudas de clientes y proveedores.
+- 📊 Métricas y estadísticas.
+- 🔐 Autenticación de usuarios.
+- 👤 Roles de usuario y administrador.
+- 🔎 Búsqueda y filtrado de información.
+- 📄 Paginación de registros.
+- 🔔 Notificaciones mediante Toast.
+- 📱 Interfaz adaptable a diferentes tamaños de pantalla.
 
 ---
 
@@ -30,26 +35,26 @@ LocalStock permite administrar productos, categorías, compras, ventas, movimien
 
 ### Frontend
 
-* [Next.js](https://nextjs.org/)
-* [React](https://react.dev/)
-* [TypeScript](https://www.typescriptlang.org/)
-* [Tailwind CSS](https://tailwindcss.com/)
-* [shadcn/ui](https://ui.shadcn.com/)
-* [Lucide React](https://lucide.dev/)
+- [Next.js](https://nextjs.org/)
+- [React](https://react.dev/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [shadcn/ui](https://ui.shadcn.com/)
+- [Lucide React](https://lucide.dev/)
+- [React Hook Form](https://react-hook-form.com/)
 
 ### Backend
 
-* Next.js Server Actions
-* Prisma ORM
-* SQLite
-* Zod
-* React Hook Form
+- Next.js Server Actions
+- [Prisma ORM](https://www.prisma.io/)
+- SQLite
+- [Zod](https://zod.dev/)
 
 ### Herramientas
 
-* Git
-* GitHub
-* npm
+- Git
+- GitHub
+- npm
 
 ---
 
@@ -57,9 +62,9 @@ LocalStock permite administrar productos, categorías, compras, ventas, movimien
 
 Antes de ejecutar el proyecto necesitas tener instalado:
 
-* Node.js 20 o superior
-* npm
-* Git
+- Node.js 20 o superior.
+- npm.
+- Git.
 
 Puedes comprobar las versiones instaladas con:
 
@@ -79,7 +84,7 @@ Clona el repositorio:
 git clone https://github.com/TU-USUARIO/localstock.git
 ```
 
-Entra al proyecto:
+Entra al directorio del proyecto:
 
 ```bash
 cd localstock
@@ -95,9 +100,9 @@ npm install
 
 ## 🗄️ Base de datos
 
-LocalStock utiliza **SQLite** como base de datos y **Prisma ORM** para trabajar con ella.
+LocalStock utiliza **SQLite** como sistema de base de datos y **Prisma ORM** para gestionar las operaciones y relaciones entre entidades.
 
-Después de instalar las dependencias, genera el cliente de Prisma:
+Genera el cliente de Prisma:
 
 ```bash
 npx prisma generate
@@ -109,17 +114,19 @@ Aplica las migraciones:
 npx prisma migrate dev
 ```
 
+> Es necesario tener configuradas las variables de entorno correspondientes antes de ejecutar las operaciones de base de datos.
+
 ---
 
 ## ▶️ Ejecutar en desarrollo
 
-Para iniciar el servidor de desarrollo:
+Inicia el servidor de desarrollo:
 
 ```bash
 npm run dev
 ```
 
-Luego abre:
+Abre la aplicación en el navegador:
 
 ```text
 http://localhost:3000
@@ -129,13 +136,13 @@ http://localhost:3000
 
 ## 🏗️ Compilar para producción
 
-Para generar una compilación de producción:
+Genera la compilación:
 
 ```bash
 npm run build
 ```
 
-Después puedes iniciar la aplicación con:
+Inicia la aplicación:
 
 ```bash
 npm run start
@@ -160,7 +167,8 @@ localstock/
 │   ├── sale/
 │   ├── purchase/
 │   ├── debt/
-│   └── cashbox/
+│   ├── cashbox/
+│   └── ...
 │
 ├── components/
 │   ├── ui/
@@ -171,6 +179,8 @@ localstock/
 │   └── ...
 │
 ├── lib/
+│
+├── repository/
 │
 ├── schema/
 │
@@ -195,64 +205,96 @@ El sistema contempla diferentes roles:
 
 ### Administrador
 
-Puede gestionar las principales funcionalidades del sistema y administrar la información del negocio.
+Puede gestionar las principales funcionalidades del sistema y administrar la información del negocio según los permisos definidos.
 
 ### Usuario
 
-Puede utilizar las funcionalidades disponibles según los permisos establecidos por el sistema.
+Puede utilizar las funcionalidades disponibles de acuerdo con los permisos establecidos por el sistema.
 
 ---
 
 ## 📦 Gestión de inventario
 
-El inventario se actualiza mediante movimientos.
+LocalStock permite administrar los productos y controlar sus existencias mediante movimientos de inventario.
 
 Entre los tipos de movimientos contemplados se encuentran:
 
-* Entrada
-* Salida
-* Compra
-* Venta
-* Ajuste
-* Devolución
+- Entrada.
+- Salida.
+- Compra.
+- Venta.
+- Ajuste.
+- Devolución.
 
 Los productos pueden tener:
 
-* Precio de venta
-* Precio de costo
-* Stock
-* Stock mínimo
-* Unidad de medida
-* Código de barras
-* Categoría
-* Estado activo/inactivo
+- Precio de venta.
+- Precio de costo.
+- Stock disponible.
+- Stock mínimo.
+- Unidad de medida.
+- Código de barras.
+- Categoría.
+- Estado activo o inactivo.
+
+### Control de inventario por lotes
+
+El sistema incorpora un mecanismo de gestión de existencias por lotes.
+
+Cada lote puede registrar:
+
+- Código de lote.
+- Fecha de compra.
+- Cantidad inicial.
+- Cantidad disponible.
+- Costo unitario de adquisición.
+
+Esto permite conservar información sobre el origen y costo de las existencias, incluso cuando un mismo producto se adquiere a precios diferentes.
+
+### Asignación de lotes en las ventas
+
+Durante el registro de una venta se pueden seleccionar los lotes específicos de los que saldrán las unidades vendidas.
+
+El sistema permite:
+
+- Seleccionar uno o varios lotes para un mismo producto.
+- Indicar la cantidad que se utilizará de cada lote.
+- Consultar la disponibilidad y el costo unitario de cada lote.
+- Descontar las cantidades correspondientes del inventario.
+- Registrar la relación entre los productos vendidos y sus lotes de origen.
+
+Esto permite calcular el costo real de adquisición de los productos vendidos y obtener una estimación de la ganancia basada en los costos de los lotes utilizados.
 
 ---
 
 ## 💰 Gestión financiera
 
-LocalStock incluye un módulo de caja para registrar movimientos financieros relacionados con:
+LocalStock incluye un módulo de caja para registrar y controlar los movimientos financieros relacionados con las operaciones del negocio.
 
-* Ventas
-* Compras
-* Gastos
-* Ingresos
-* Pagos de deudas
-* Cobros de deudas
-* Ajustes
+Entre los movimientos contemplados se encuentran:
 
-También permite gestionar deudas de:
+- Ventas.
+- Compras.
+- Gastos.
+- Ingresos.
+- Pagos de deudas.
+- Cobros de deudas.
+- Ajustes.
 
-* Clientes
-* Proveedores
+También permite gestionar:
+
+- Deudas de clientes.
+- Deudas con proveedores.
 
 ---
 
 ## 🎯 Objetivo del proyecto
 
-El objetivo de LocalStock es proporcionar una herramienta sencilla para la gestión de pequeños negocios, centralizando en una misma aplicación el control de inventario, ventas, compras, caja y deudas.
+El objetivo de LocalStock es proporcionar una herramienta sencilla y práctica para la administración de pequeños negocios.
 
-El proyecto está desarrollado como una aplicación local, utilizando SQLite, lo que permite trabajar sin depender de un servidor de base de datos externo.
+La aplicación busca centralizar en un mismo sistema el control de inventario, las compras, las ventas y las operaciones financieras, ofreciendo información organizada que facilite la toma de decisiones.
+
+El proyecto utiliza SQLite como base de datos, permitiendo trabajar sin depender de un servidor de base de datos externo.
 
 ---
 
@@ -260,18 +302,19 @@ El proyecto está desarrollado como una aplicación local, utilizando SQLite, lo
 
 🚧 **En desarrollo**
 
-Actualmente se encuentran implementadas las principales funcionalidades de:
+Actualmente se encuentran implementadas las principales funcionalidades relacionadas con:
 
-* Productos
-* Categorías
-* Inventario
-* Ventas
-* Compras
-* Caja
-* Deudas
-* Autenticación
+- Productos.
+- Categorías.
+- Inventario.
+- Compras.
+- Ventas.
+- Gestión de lotes.
+- Caja.
+- Deudas.
+- Autenticación.
 
-Se continúan incorporando mejoras en la interfaz, métricas, reportes y experiencia de usuario.
+Se continúa trabajando en mejoras de interfaz, reportes, métricas, optimización y experiencia de usuario.
 
 ---
 

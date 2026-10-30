@@ -7,6 +7,11 @@ datasource db {
   provider = "sqlite"
 }
 
+// ============================================================
+// ENUMS
+// ============================================================
+
+// Tipos de movimientos del inventario.
 enum MovementType {
   IN
   OUT
@@ -16,6 +21,14 @@ enum MovementType {
   RETURN
 }
 
+// Unidades de medida de los productos.
+enum UnitType {
+  UNIT
+  GRAM
+  MILLILITER
+}
+
+// Tipos de movimientos de caja.
 enum CashMovementType {
   SALE
   PURCHASE
@@ -26,17 +39,24 @@ enum CashMovementType {
   ADJUSTMENT
 }
 
+// Clasificación de las deudas.
 enum DebtType {
   CLIENT
   SUPPLIER
 }
 
+// Estado de una deuda.
 enum DebtStatus {
   OPEN
   PARTIAL
   PAID
 }
 
+// ============================================================
+// 1. USUARIOS Y SESIONES
+// ============================================================
+
+// Usuario propietario de los datos del sistema.
 model User {
   id        Int    @id @default(autoincrement())
   name      String
@@ -46,84 +66,235 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sales          Sale[]
-  stockMovements StockMovement[]
-  cashBoxes      CashBox[]
-  cashMovements  CashMovement[]
-  debts          Debt[]
-  debtPayments   DebtPayment[]
-  locales        Local[]
-  tickets        Ticket[]
-  purchases      Purchase[]
-  products       Product[]
+  // Relaciones principales.
   sessions       Session[]
+  products       Product[]
+  sales          Sale[]
+  purchases      Purchase[]
+  stockMovements StockMovement[]
+
+  // Finanzas.
+  cashBoxes     CashBox[]
+  cashMovements CashMovement[]
+  debts         Debt[]
+  debtPayments  DebtPayment[]
+
+  // Locales y tickets.
+  locales Local[]
+  tickets Ticket[]
 }
 
+// Sesiones de autenticación.
 model Session {
   id        String   @id @default(cuid())
   token     String   @unique
   userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
 }
 
+// ============================================================
+// 2. CATEGORÍAS Y PRODUCTOS
+// ============================================================
+
+// Categorías utilizadas para clasificar productos.
 model Category {
-  id          Int       @id @default(autoincrement())
-  name        String    @unique
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
   description String?
-  active      Boolean   @default(true)
-  products    Product[]
+  active      Boolean @default(true)
+
+  products Product[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// Producto maestro.
+// Su stock representa la suma de las existencias de todos sus lotes.
 model Product {
   id Int @id @default(autoincrement())
 
   name        String
-  // barcode → opcional y único.
   barcode     String? @unique
   description String?
 
-  unit         String    @default("unidad")
-  // price → precio actual de venta.
-  price        Float
-  // costPrice → costo actual de adquisición.
-  costPrice    Float
-  // stock → existencias actuales.
-  stock        Int       @default(0)
-  // minStock → límite para alertar de stock bajo.
-  minStock     Int       @default(0)
-  // Codigo del Lote
+  // Unidad de medida.
+  unitType UnitType @default(UNIT)
+  unit     String   @default("unidad")
+
+  // Precio de venta y costo promedio de adquisición.
+  price     Float
+  costPrice Float
+
+  // Existencias generales.
+  stock    Float @default(0)
+  minStock Int   @default(0)
+
+  active Boolean @default(true)
+
+  // Categoría.
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // Propietario.
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  // Relaciones de inventario.
+  presentations  ProductPresentation[]
+  lots           ProductLot[]
+  stockMovements StockMovement[]
+
+  // Relaciones comerciales.
+  purchaseItems PurchaseItem[]
+  saleItems     SaleItem[]
+  ticketItems   TicketItem[]
+
+  // Campos antiguos de lote.
+  // Se conservan temporalmente por compatibilidad.
   lotCode      String?
-  //Dia de compra 
   purchaseDate DateTime?
-  // active → permite desactivar un producto sin borrarlo.
-  active       Boolean   @default(true)
-  // categoryId → relación con una categoría.
-  categoryId   Int?
-  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  saleItems      SaleItem[]
-  stockMovements StockMovement[]
-  ticketItems    TicketItem[]
-  purchaseItems  PurchaseItem[]
+  @@index([name])
+  @@index([categoryId])
+  @@index([userId])
+}
+
+// ============================================================
+// 3. PRESENTACIONES DE PRODUCTOS
+// ============================================================
+
+// Permite comprar o vender productos en diferentes formatos.
+// Ejemplo: saco de 100 lb = factor 100.
+model ProductPresentation {
+  id Int @id @default(autoincrement())
+
+  name   String
+  factor Float
+
+  canPurchase Boolean @default(true)
+  canSell     Boolean @default(true)
+  active      Boolean @default(true)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+// ============================================================
+// 4. LOTES DE INVENTARIO
+// ============================================================
+
+// Cada lote representa una entrada independiente de mercancía.
+// Un producto puede tener muchos lotes.
+model ProductLot {
+  id Int @id @default(autoincrement())
+
+  lotCode      String?
+  purchaseDate DateTime
+
+  // Cantidad recibida originalmente.
+  initialQuantity Float
+
+  // Cantidad que todavía está disponible.
+  availableQuantity Float
+
+  // Costo por unidad base de este lote.
+  unitCost Float
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Compra que originó este lote.
+  purchaseItemId Int?          @unique
+  purchaseItem   PurchaseItem? @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+
+  // Ventas y movimientos asociados.
+  saleAllocations SaleItemLot[]
+  stockMovements  StockMovement[]
+
+  createdAt DateTime @default(now())
+
+  @@index([productId, purchaseDate])
+}
+
+// ============================================================
+// 5. COMPRAS
+// ============================================================
+
+// Representa una compra completa.
+model Purchase {
+  id Int @id @default(autoincrement())
+
+  total        Float
+  paymentType  String?
+  supplierName String?
+  notes        String?
+
+  createdAt DateTime @default(now())
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
-  @@index([name])
-  @@index([categoryId])
+  items PurchaseItem[]
+  debt  Debt?
+
+  @@index([createdAt])
+  @@index([userId])
 }
 
+// Cada registro representa una línea de una compra.
+model PurchaseItem {
+  id Int @id @default(autoincrement())
+
+  // Cantidad y costo convertidos a unidades base.
+  quantity Float
+  unitCost Float
+  subtotal Float
+
+  // Información de la presentación comprada.
+  purchasedQuantity  Float?
+  purchasedUnitCost  Float?
+  presentationName   String?
+  presentationFactor Float?
+
+  productName String?
+
+  // Información del lote recibido.
+  lotCode      String?
+  purchaseDate DateTime?
+
+  purchaseId Int
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  // Lote creado a partir de esta línea de compra.
+  productLot ProductLot?
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+// ============================================================
+// 6. VENTAS
+// ============================================================
+
+// Representa una venta.
 model Sale {
   id Int @id @default(autoincrement())
 
@@ -143,10 +314,11 @@ model Sale {
   @@index([userId])
 }
 
+// Detalle de cada producto vendido.
 model SaleItem {
   id Int @id @default(autoincrement())
 
-  quantity Int
+  quantity Float
 
   price     Float?
   unitPrice Float?
@@ -163,15 +335,40 @@ model SaleItem {
   productId Int?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
+  // Lotes de donde se descontaron las unidades vendidas.
+  lotAllocations SaleItemLot[]
+
   @@index([productId])
   @@index([saleId])
 }
 
+// Relaciona cada línea de venta con los lotes consumidos.
+// Permite descontar cantidades de varios lotes en una misma venta.
+model SaleItemLot {
+  id Int @id @default(autoincrement())
+
+  quantity Float
+
+  saleItemId Int
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+
+  productLotId Int
+  productLot   ProductLot @relation(fields: [productLotId], references: [id])
+
+  @@index([saleItemId])
+  @@index([productLotId])
+}
+
+// ============================================================
+// 7. MOVIMIENTOS DE INVENTARIO
+// ============================================================
+
+// Historial de entradas, salidas y ajustes de existencias.
 model StockMovement {
   id Int @id @default(autoincrement())
 
   type     MovementType
-  quantity Int
+  quantity Float
 
   note   String?
   reason String?
@@ -181,6 +378,10 @@ model StockMovement {
   productId Int
   product   Product @relation(fields: [productId], references: [id])
 
+  // Lote relacionado, cuando corresponda.
+  productLotId Int?
+  productLot   ProductLot? @relation(fields: [productLotId], references: [id], onDelete: SetNull)
+
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
@@ -189,42 +390,11 @@ model StockMovement {
   @@index([userId, createdAt])
 }
 
-// Representa la compra completa
-model Purchase {
-  id           Int            @id @default(autoincrement())
-  total        Float
-  paymentType  String?
-  supplierName String?
-  notes        String?
-  createdAt    DateTime       @default(now())
-  userId       Int
-  user         User           @relation(fields: [userId], references: [id])
-  items        PurchaseItem[]
-  debt         Debt?
+// ============================================================
+// 8. LOCALES Y TICKETS
+// ============================================================
 
-  @@index([createdAt])
-  @@index([userId])
-}
-
-//Representa lo que contiene la compra
-model PurchaseItem {
-  id Int @id @default(autoincrement())
-
-  quantity    Int
-  unitCost    Float
-  subtotal    Float
-  productName String?
-
-  purchaseId Int
-  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-
-  productId Int?
-  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-
-  @@index([purchaseId])
-  @@index([productId])
-}
-
+// Locales o puntos de venta pertenecientes a un usuario.
 model Local {
   id Int @id @default(autoincrement())
 
@@ -247,6 +417,7 @@ model Local {
   @@index([userId, active])
 }
 
+// Ticket o comprobante de venta.
 model Ticket {
   id Int @id @default(autoincrement())
 
@@ -283,6 +454,7 @@ model Ticket {
   @@index([paymentStatus])
 }
 
+// Productos incluidos en un ticket.
 model TicketItem {
   id Int @id @default(autoincrement())
 
@@ -301,6 +473,11 @@ model TicketItem {
   @@index([productId])
 }
 
+// ============================================================
+// 9. CAJA Y MOVIMIENTOS FINANCIEROS
+// ============================================================
+
+// Caja de dinero de cada usuario.
 model CashBox {
   id Int @id @default(autoincrement())
 
@@ -326,6 +503,7 @@ model CashBox {
   @@index([userId, active])
 }
 
+// Historial de movimientos de dinero.
 model CashMovement {
   id Int @id @default(autoincrement())
 
@@ -350,24 +528,35 @@ model CashMovement {
   @@index([referenceType, referenceId])
 }
 
+// ============================================================
+// 10. DEUDAS Y PAGOS
+// ============================================================
+
+// Deudas de clientes o proveedores.
 model Debt {
-  id         Int        @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   personName String
   type       DebtType
-  total      Float
-  remaining  Float      @default(0)
-  status     DebtStatus @default(OPEN)
-  dueDate    DateTime?
-  notes      String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+
+  total     Float
+  remaining Float      @default(0)
+  status    DebtStatus @default(OPEN)
+
+  dueDate DateTime?
+  notes   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
+  // Deuda asociada a un ticket.
   ticketId Int?
   ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
+  // Deuda asociada a una compra.
   purchaseId Int?      @unique
   purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
 
@@ -378,10 +567,13 @@ model Debt {
   @@index([type, status])
 }
 
+// Pagos realizados sobre una deuda.
 model DebtPayment {
-  id        Int      @id @default(autoincrement())
-  amount    Float
-  notes     String?
+  id Int @id @default(autoincrement())
+
+  amount Float
+  notes  String?
+
   createdAt DateTime @default(now())
 
   debtId Int
@@ -395,5 +587,5 @@ model DebtPayment {
 
   @@index([debtId, createdAt])
   @@index([userId, createdAt])
-  @@index([cashBoxId, createdAt])
+  @@index([cashBoxId])
 }

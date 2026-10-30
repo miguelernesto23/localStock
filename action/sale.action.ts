@@ -1,12 +1,22 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { createSaleRepo, getSaleByIdRepo, getSalesRepo } from "@/repository/sale.repository";
+import {
+  createSaleRepo,
+  getSaleByIdRepo,
+  getSalesRepo,
+} from "@/repository/sale.repository";
+
+type LotAllocationInput = {
+  lotId: number;
+  quantity: number;
+};
 
 type SaleItemInput = {
   productId: number;
   quantity: number;
   unitPrice: number;
+  lotAllocations?: LotAllocationInput[];
 };
 
 type CreateSaleInput = {
@@ -16,9 +26,7 @@ type CreateSaleInput = {
 
 export async function createSale(data: CreateSaleInput) {
   try {
-    // -----------------------------------------
     // 1. Verificar autenticación
-    // -----------------------------------------
 
     const user = await getCurrentUser();
 
@@ -29,9 +37,7 @@ export async function createSale(data: CreateSaleInput) {
       };
     }
 
-    // -----------------------------------------
-    // 2. Validaciones básicas
-    // -----------------------------------------
+    // 2. Validar datos generales
 
     if (!data.items || data.items.length === 0) {
       return {
@@ -47,9 +53,64 @@ export async function createSale(data: CreateSaleInput) {
       };
     }
 
-    // -----------------------------------------
-    // 3. Crear venta
-    // -----------------------------------------
+    // 3. Validar artículos y lotes seleccionados
+
+    for (const item of data.items) {
+      if (
+        !Number.isInteger(item.productId) ||
+        item.productId <= 0 ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0 ||
+        !Number.isFinite(item.unitPrice) ||
+        item.unitPrice <= 0
+      ) {
+        return {
+          success: false as const,
+          error: "Hay un producto con datos no válidos.",
+        };
+      }
+
+      if (item.lotAllocations !== undefined) {
+        if (
+          !Array.isArray(item.lotAllocations) ||
+          item.lotAllocations.length === 0
+        ) {
+          return {
+            success: false as const,
+            error: "Debes seleccionar al menos un lote.",
+          };
+        }
+
+        for (const allocation of item.lotAllocations) {
+          if (
+            !Number.isInteger(allocation.lotId) ||
+            allocation.lotId <= 0 ||
+            !Number.isInteger(allocation.quantity) ||
+            allocation.quantity <= 0
+          ) {
+            return {
+              success: false as const,
+              error: "La selección de lotes contiene datos no válidos.",
+            };
+          }
+        }
+
+        const allocatedQuantity = item.lotAllocations.reduce(
+          (sum, allocation) => sum + allocation.quantity,
+          0,
+        );
+
+        if (allocatedQuantity !== item.quantity) {
+          return {
+            success: false as const,
+            error:
+              "La cantidad de los lotes no coincide con la cantidad de venta.",
+          };
+        }
+      }
+    }
+
+    // 4. Crear venta
 
     const sale = await createSaleRepo({
       ...data,
@@ -63,28 +124,30 @@ export async function createSale(data: CreateSaleInput) {
   } catch (error) {
     console.error("Error creando venta:", error);
 
-    // -----------------------------------------
-    // Errores de negocio
-    // -----------------------------------------
+    if (!(error instanceof Error)) {
+      return {
+        success: false as const,
+        error: "No se pudo registrar la venta.",
+      };
+    }
 
-    if (error instanceof Error && error.message === "PRODUCT_NOT_FOUND") {
+    // 5. Errores de negocio
+
+    if (error.message === "PRODUCT_NOT_FOUND") {
       return {
         success: false as const,
         error: "Uno de los productos seleccionados no existe.",
       };
     }
 
-    if (error instanceof Error && error.message === "PRODUCT_INACTIVE") {
+    if (error.message === "PRODUCT_INACTIVE") {
       return {
         success: false as const,
         error: "Uno de los productos seleccionados está inactivo.",
       };
     }
 
-    if (
-      error instanceof Error &&
-      error.message.startsWith("INSUFFICIENT_STOCK:")
-    ) {
+    if (error.message.startsWith("INSUFFICIENT_STOCK:")) {
       const productName = error.message.split(":")[1];
 
       return {
@@ -93,28 +156,66 @@ export async function createSale(data: CreateSaleInput) {
       };
     }
 
-    if (error instanceof Error && error.message === "INVALID_QUANTITY") {
+    if (error.message.startsWith("INSUFFICIENT_LOT_STOCK:")) {
+      const productName = error.message.split(":")[1];
+
+      return {
+        success: false as const,
+        error: `No hay suficientes unidades disponibles en los lotes de ${productName}.`,
+      };
+    }
+
+    if (error.message === "LOT_NOT_FOUND") {
+      return {
+        success: false as const,
+        error:
+          "Uno de los lotes seleccionados no existe o no pertenece al producto.",
+      };
+    }
+
+    if (error.message === "INVALID_LOT_ALLOCATION") {
+      return {
+        success: false as const,
+        error: "La selección de lotes no es válida.",
+      };
+    }
+
+    if (error.message === "DUPLICATE_LOT_ALLOCATION") {
+      return {
+        success: false as const,
+        error: "No puedes seleccionar dos veces el mismo lote.",
+      };
+    }
+
+    if (error.message === "LOT_QUANTITY_MISMATCH") {
+      return {
+        success: false as const,
+        error: "La cantidad asignada a los lotes no coincide con la venta.",
+      };
+    }
+
+    if (error.message === "INVALID_QUANTITY") {
       return {
         success: false as const,
         error: "La cantidad de uno de los productos no es válida.",
       };
     }
 
-    if (error instanceof Error && error.message === "INVALID_PRICE") {
+    if (error.message === "INVALID_PRICE") {
       return {
         success: false as const,
         error: "El precio de uno de los productos no es válido.",
       };
     }
 
-    if (error instanceof Error && error.message === "CASHBOX_NOT_FOUND") {
+    if (error.message === "CASHBOX_NOT_FOUND") {
       return {
         success: false as const,
         error: "No tienes una caja activa para registrar esta venta.",
       };
     }
 
-    if (error instanceof Error && error.message === "EMPTY_SALE") {
+    if (error.message === "EMPTY_SALE") {
       return {
         success: false as const,
         error: "La venta debe tener al menos un producto.",
@@ -127,7 +228,11 @@ export async function createSale(data: CreateSaleInput) {
     };
   }
 }
-//
+
+// ============================================================
+// OBTENER TODAS LAS VENTAS
+// ============================================================
+
 export async function getSales() {
   try {
     const user = await getCurrentUser();
@@ -154,6 +259,10 @@ export async function getSales() {
     };
   }
 }
+
+// ============================================================
+// OBTENER UNA VENTA POR ID
+// ============================================================
 
 export async function getSaleById(id: number) {
   try {
